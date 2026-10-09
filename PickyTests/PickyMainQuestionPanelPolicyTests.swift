@@ -76,7 +76,24 @@ struct PickyMainQuestionPanelPolicyTests {
     @Test
     func panelHeightIsCappedToTheVisibleScreen() {
         #expect(PickyMainQuestionPanelLayout.cappedHeight(fittingHeight: 900, visibleScreenHeight: 800) == 560)
-        #expect(PickyMainQuestionPanelLayout.cappedHeight(fittingHeight: 180, visibleScreenHeight: 800) == PickyMainQuestionPanelLayout.estimatedPanelHeight)
+        #expect(PickyMainQuestionPanelLayout.cappedHeight(fittingHeight: 180, visibleScreenHeight: 800) == 180)
+    }
+
+    @Test
+    func panelOpensCenteredOnTheScreenRegardlessOfCursor() {
+        // Secondary display to the right, menu bar excluded from the visible frame.
+        let visibleFrame = CGRect(x: 1440, y: 0, width: 1920, height: 1050)
+        let frame = PickyMainQuestionPanelLayout.centeredFrame(size: CGSize(width: 380, height: 300), in: visibleFrame)
+
+        #expect(frame.midX == visibleFrame.midX)
+        #expect(frame.midY == visibleFrame.midY)
+        #expect(frame.size == CGSize(width: 380, height: 300))
+    }
+
+    @Test
+    func formScrollsOnlyPastTheCap() {
+        #expect(PickyMainQuestionPanelLayout.scrollViewHeight(contentHeight: 380) == 380)
+        #expect(PickyMainQuestionPanelLayout.scrollViewHeight(contentHeight: 900) == PickyMainQuestionPanelLayout.maximumScrollableContentHeight)
     }
 
     @Test

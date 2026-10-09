@@ -17,6 +17,8 @@ final class PickyMainQuestionPanelViewModel: ObservableObject {
     @Published var stepper = PickyAskUserQuestionStepper()
 
     var onAnswer: (String, JSONValue) -> Void = { _, _ in }
+    /// Measured height of the whole panel content, reported after SwiftUI lays it out.
+    var onContentHeightChange: (CGFloat) -> Void = { _ in }
 
     var questions: [PickyExtensionUiQuestion] { request?.questions ?? [] }
     var currentStepIndex: Int { stepper.index }
@@ -78,6 +80,9 @@ final class PickyMainQuestionPanelViewModel: ObservableObject {
 
 struct PickyMainQuestionPanelView: View {
     @ObservedObject var viewModel: PickyMainQuestionPanelViewModel
+    /// Natural height of the scrolled form. The ScrollView takes this height up to
+    /// its cap, so the panel grows with the question instead of a fixed guess.
+    @State private var scrollContentHeight: CGFloat = 0
 
     private var request: PickyExtensionUiRequest? { viewModel.request }
     private var questions: [PickyExtensionUiQuestion] { viewModel.questions }
@@ -105,8 +110,12 @@ struct PickyMainQuestionPanelView: View {
                         .opacity(viewModel.isSending ? 0.55 : 1)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(PickyMainQuestionHeightReader(height: $scrollContentHeight))
                 }
-                .frame(maxHeight: PickyMainQuestionPanelLayout.maximumScrollableContentHeight, alignment: .top)
+                .frame(
+                    height: PickyMainQuestionPanelLayout.scrollViewHeight(contentHeight: scrollContentHeight),
+                    alignment: .top
+                )
                 footer
             }
         }
@@ -123,19 +132,23 @@ struct PickyMainQuestionPanelView: View {
         )
         .padding(PickyMainQuestionPanelLayout.shadowOutset)
         .frame(width: PickyMainQuestionPanelLayout.panelWidth, alignment: .leading)
+        .background(PickyMainQuestionHeightReader(height: nil, onChange: { viewModel.onContentHeightChange($0) }))
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     /// The grab strip drags the panel. SwiftUI's hosting view claims mouse-down,
     /// so `isMovableByWindowBackground` alone never starts a move; an AppKit
-    /// view under the strip hands the event to `performDrag(with:)` instead.
+    /// view laid over the whole strip hands the event to `performDrag(with:)`.
+    /// It sits on top of the capsule: placed underneath, a click on the visible
+    /// capsule itself landed on SwiftUI and never moved the panel.
     private var dragGrabber: some View {
         Capsule(style: .continuous)
             .fill(DS.Colors.textPrimary.opacity(0.18))
             .frame(width: 36, height: 4)
             .frame(maxWidth: .infinity, alignment: .center)
-            .frame(height: 12)
-            .background(PickyWindowDragHandle())
-            .padding(.vertical, -4) // design-token-exception: keeps the 12pt drag hit area while the strip takes only 4pt of layout
+            .frame(height: PickyMainQuestionPanelLayout.dragStripHeight)
+            .overlay(PickyWindowDragHandle())
+            .padding(.top, -DS.Spacing.space2) // design-token-exception: lets the strip reach the panel's top edge without adding layout height
             .accessibilityHidden(true)
     }
 
@@ -245,6 +258,25 @@ struct PickyMainQuestionPanelView: View {
                 }
             }
         }
+    }
+}
+
+/// Reports a view's laid-out height. Works on macOS 14, unlike `onGeometryChange`.
+private struct PickyMainQuestionHeightReader: View {
+    var height: Binding<CGFloat>?
+    var onChange: (CGFloat) -> Void = { _ in }
+
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear
+                .onAppear { report(proxy.size.height) }
+                .onChange(of: proxy.size.height) { _, newHeight in report(newHeight) }
+        }
+    }
+
+    private func report(_ value: CGFloat) {
+        height?.wrappedValue = value
+        onChange(value)
     }
 }
 

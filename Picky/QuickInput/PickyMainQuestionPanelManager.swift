@@ -92,16 +92,33 @@ enum PickyMainQuestionPanelLayout {
     static let contentWidth: CGFloat = 360
     static let shadowOutset: CGFloat = 10
     static let panelWidth: CGFloat = contentWidth + shadowOutset * 2
+    /// First-frame height before SwiftUI reports the measured content height.
     static let estimatedPanelHeight: CGFloat = 220
-    static let maximumScrollableContentHeight: CGFloat = 300
-    static let cursorOffsetX: CGFloat = 18
-    static let cursorOffsetY: CGFloat = 12
+    /// Leaves room for the grabber, header and footer within 0.7 of an 800pt screen.
+    static let maximumScrollableContentHeight: CGFloat = 420
     static let maximumScreenHeightFraction: CGFloat = 0.7
+    /// Full-width grab strip above the header; the capsule is centered in it.
+    static let dragStripHeight: CGFloat = 20
+
+    /// The form scrolls only past the cap; below it the panel shows every row.
+    static func scrollViewHeight(contentHeight: CGFloat) -> CGFloat {
+        min(max(contentHeight, 1), maximumScrollableContentHeight)
+    }
+
+    /// Centers the panel's visible card on the screen. The shadow outset is
+    /// symmetric, so centering the window frame centers the card too.
+    static func centeredFrame(size: CGSize, in visibleFrame: CGRect) -> CGRect {
+        CGRect(
+            x: visibleFrame.midX - size.width / 2,
+            y: visibleFrame.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        ).integral
+    }
 
     static func cappedHeight(fittingHeight: CGFloat, visibleScreenHeight: CGFloat?) -> CGFloat {
-        let desiredHeight = max(fittingHeight, estimatedPanelHeight)
-        guard let visibleScreenHeight else { return desiredHeight }
-        return min(desiredHeight, visibleScreenHeight * maximumScreenHeightFraction)
+        guard let visibleScreenHeight else { return fittingHeight }
+        return min(fittingHeight, visibleScreenHeight * maximumScreenHeightFraction)
     }
 }
 
@@ -114,6 +131,7 @@ final class PickyMainQuestionPanelManager {
     /// Set once the user drags the panel, so a later answer-failure reopen keeps
     /// their chosen spot instead of snapping back to the cursor. Reset per request.
     private var hasUserMovedPanel = false
+    private var lastContentHeight: CGFloat?
     private var isProgrammaticMove = false
     private var panelMoveObserver: NSObjectProtocol?
 
@@ -134,6 +152,9 @@ final class PickyMainQuestionPanelManager {
         viewModel.onAnswer = { [weak self] requestID, value in
             self?.sendAnswer(requestID: requestID, value: value)
         }
+        viewModel.onContentHeightChange = { [weak self] height in
+            self?.resizePanel(toContentHeight: height)
+        }
     }
 
     deinit {
@@ -152,7 +173,7 @@ final class PickyMainQuestionPanelManager {
         viewModel.configure(request: request)
         if isNewRequest {
             hasUserMovedPanel = false
-            positionPanelNearCursor(NSEvent.mouseLocation)
+            positionPanelCentered(on: NSEvent.mouseLocation)
         }
         panel?.makeKeyAndOrderFront(nil)
         panel?.orderFrontRegardless()
@@ -185,7 +206,7 @@ final class PickyMainQuestionPanelManager {
             self.viewModel.isSending = false
             self.viewModel.errorMessage = message
             if !self.hasUserMovedPanel {
-                self.positionPanelNearCursor(NSEvent.mouseLocation)
+                self.positionPanelCentered(on: NSEvent.mouseLocation)
             }
             self.panel?.makeKeyAndOrderFront(nil)
             self.panel?.orderFrontRegardless()
@@ -240,35 +261,54 @@ final class PickyMainQuestionPanelManager {
         panel = questionPanel
     }
 
-    private func positionPanelNearCursor(_ cursorLocation: CGPoint) {
+    /// SwiftUI measures the form after `configure`, so the first placement uses
+    /// the last known height and this call corrects it. The panel stays centered
+    /// until the user drags it; after that the top edge stays put.
+    private func resizePanel(toContentHeight contentHeight: CGFloat) {
+        // A cleared panel measures as bare padding; keep the last real form height.
+        guard let panel, contentHeight > 0, viewModel.request != nil else { return }
+        lastContentHeight = contentHeight
+        let screen = panel.screen ?? NSScreen.main
+        let height = PickyMainQuestionPanelLayout.cappedHeight(
+            fittingHeight: contentHeight,
+            visibleScreenHeight: screen?.visibleFrame.height
+        )
+        var frame = panel.frame
+        guard abs(frame.height - height) > 0.5 else { return }
+        if !hasUserMovedPanel, let visibleFrame = screen?.visibleFrame {
+            frame = PickyMainQuestionPanelLayout.centeredFrame(
+                size: CGSize(width: frame.width, height: height),
+                in: visibleFrame
+            )
+        } else {
+            frame.origin.y = frame.maxY - height
+            frame.size.height = height
+            if let visibleFrame = screen?.visibleFrame, frame.minY < visibleFrame.minY {
+                frame.origin.y = visibleFrame.minY
+            }
+        }
+        isProgrammaticMove = true
+        panel.setFrame(frame, display: true)
+        isProgrammaticMove = false
+    }
+
+    /// Opens on the screen the user is working on (the one under the cursor),
+    /// centered rather than beside the cursor, since a question needs attention.
+    private func positionPanelCentered(on cursorLocation: CGPoint) {
         guard let panel else { return }
         let screen = NSScreen.screens.first(where: { $0.frame.contains(cursorLocation) }) ?? NSScreen.main
-        let fittingSize = panel.contentView?.fittingSize
-            ?? CGSize(width: PickyMainQuestionPanelLayout.panelWidth, height: PickyMainQuestionPanelLayout.estimatedPanelHeight)
         let panelSize = CGSize(
             width: PickyMainQuestionPanelLayout.panelWidth,
             height: PickyMainQuestionPanelLayout.cappedHeight(
-                fittingHeight: fittingSize.height,
+                fittingHeight: lastContentHeight ?? PickyMainQuestionPanelLayout.estimatedPanelHeight,
                 visibleScreenHeight: screen?.visibleFrame.height
             )
         )
-        var originX = cursorLocation.x + PickyMainQuestionPanelLayout.cursorOffsetX - PickyMainQuestionPanelLayout.shadowOutset
-        var originY = cursorLocation.y - PickyMainQuestionPanelLayout.cursorOffsetY - (panelSize.height - PickyMainQuestionPanelLayout.shadowOutset)
-
-        if let screen {
-            let visibleFrame = screen.visibleFrame
-            if originX + panelSize.width > visibleFrame.maxX {
-                originX = cursorLocation.x - PickyMainQuestionPanelLayout.cursorOffsetX - panelSize.width + PickyMainQuestionPanelLayout.shadowOutset
-            }
-            if originY < visibleFrame.minY {
-                originY = cursorLocation.y + PickyMainQuestionPanelLayout.cursorOffsetY - PickyMainQuestionPanelLayout.shadowOutset
-            }
-            originX = max(visibleFrame.minX, min(originX, visibleFrame.maxX - panelSize.width))
-            originY = max(visibleFrame.minY, min(originY, visibleFrame.maxY - panelSize.height))
-        }
+        let frame = screen.map { PickyMainQuestionPanelLayout.centeredFrame(size: panelSize, in: $0.visibleFrame) }
+            ?? CGRect(origin: panel.frame.origin, size: panelSize)
 
         isProgrammaticMove = true
-        panel.setFrame(NSRect(origin: CGPoint(x: originX, y: originY), size: panelSize), display: true)
+        panel.setFrame(frame, display: true)
         isProgrammaticMove = false
     }
 

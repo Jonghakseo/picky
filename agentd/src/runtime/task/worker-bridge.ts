@@ -7,7 +7,7 @@
  * Task arrives through `PICKY_TASK_*` environment variables.
  */
 import { readFile } from "node:fs/promises";
-import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ExtensionAPI, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { queryContext } from "./context.js";
 import type { TaskContextSnapshot } from "./types.js";
@@ -113,6 +113,44 @@ async function readSnapshot(file: string): Promise<TaskContextSnapshot> {
   };
 }
 
+/**
+ * A report shuts the worker down, which stops every job it still runs, so a report while one of
+ * its jobs runs throws that job's result away. bash_async results name a job and its status, and a
+ * list names every job this process keeps. Reading a finished job's output carries no status, so
+ * before refusing, the bridge asks bash_async for the list instead of trusting what it last saw.
+ */
+const BACKGROUND_JOB_TOOL = "bash_async";
+/** Any other status, including one a newer bash_async adds, counts as ended so a report is never held forever. */
+const LIVE_JOB_STATUSES: ReadonlySet<string> = new Set(["queued", "running"]);
+
+interface JobFact { id: string; status: string; title?: string }
+
+function jobFact(value: unknown, idKey: "id" | "jobId"): JobFact | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const id = record[idKey];
+  if (typeof id !== "string" || typeof record.status !== "string") return undefined;
+  return { id, status: record.status, ...(typeof record.title === "string" ? { title: record.title } : {}) };
+}
+
+/** A list is the whole set (`all`); other results describe only the job they name. Errors and rate limits describe nothing. */
+function readJobs(details: unknown): { all: boolean; jobs: JobFact[] } {
+  const jobs = details && typeof details === "object" ? (details as Record<string, unknown>).jobs : undefined;
+  if (Array.isArray(jobs)) return { all: true, jobs: jobs.flatMap((job) => jobFact(job, "id") ?? []) };
+  const single = jobFact(details, "jobId");
+  return { all: false, jobs: single ? [single] : [] };
+}
+
+function reportWhileJobsRunReason(jobs: ReadonlyArray<{ id: string; title: string }>): string {
+  const list = jobs.map((job) => (job.title ? `"${job.title}" (${job.id})` : job.id)).join(", ");
+  return [
+    `${TASK_REPORT_TOOL} is refused while background jobs you started are still running: ${list}.`,
+    "Reporting now would stop them before you have their result.",
+    `End your turn without ${TASK_REPORT_TOOL}; each job's completion message wakes you in this session.`,
+    `If you no longer need a job, stop it with ${BACKGROUND_JOB_TOOL} kill first.`,
+  ].join(" ");
+}
+
 export default function taskWorkerBridge(pi: ExtensionAPI): void {
   const taskId = process.env[ENV_TASK_ID]?.trim();
   // Loaded outside a Task worker (a stray --extension, a user copy): register nothing.
@@ -124,6 +162,31 @@ export default function taskWorkerBridge(pi: ExtensionAPI): void {
     readonly: process.env[ENV_TASK_READONLY] === "1",
     scopeApproved: process.env[ENV_TASK_SCOPE_APPROVED] === "1",
     contextFile: process.env[ENV_TASK_CONTEXT_FILE] ?? "",
+  };
+
+  /**
+   * Jobs this worker process started and has not seen end, with their titles. A resumed Task runs
+   * in a new process whose old jobs died with the previous one, so they are never carried over.
+   */
+  const liveJobs = new Map<string, string>();
+  const noteJobs = (details: unknown, startTitle = ""): void => {
+    const { all, jobs } = readJobs(details);
+    const titles = new Map(liveJobs);
+    if (all) liveJobs.clear();
+    for (const job of jobs) {
+      if (LIVE_JOB_STATUSES.has(job.status)) liveJobs.set(job.id, job.title ?? titles.get(job.id) ?? startTitle);
+      else liveJobs.delete(job.id);
+    }
+  };
+  /** Settles which tracked jobs still run. A rate-limited list returns no jobs and leaves the last answer standing. */
+  const confirmLiveJobs = async (ctx: ExtensionToolContext | undefined): Promise<void> => {
+    if (typeof ctx?.executeTool !== "function") return;
+    try {
+      const outcome = await ctx.executeTool(BACKGROUND_JOB_TOOL, { action: "list" });
+      if (!outcome.isError) noteJobs(outcome.result.details);
+    } catch {
+      // executeTool reports tool failures as isError; anything else leaves the tracked jobs in charge.
+    }
   };
 
   /** Delegation tools can register lazily, so the active set is filtered again every turn. */
@@ -145,12 +208,14 @@ export default function taskWorkerBridge(pi: ExtensionAPI): void {
     promptSnippet: "task_report: hand the final result of this Task back to the parent agent.",
     parameters: ReportParams,
     annotations: { readOnlyHint: true, openWorldHint: false },
-    async execute(_toolCallId, params: Static<typeof ReportParams>): Promise<AgentToolResult<TaskReportDetails>> {
+    async execute(_toolCallId, params: Static<typeof ReportParams>, _signal, _onUpdate, ctx): Promise<AgentToolResult<TaskReportDetails>> {
       if (params.revision !== state.revision) {
         throw new Error(
           `Revision ${params.revision} is not active. The active revision is ${state.revision}: re-read the newest instruction and report against it.`,
         );
       }
+      if (liveJobs.size > 0) await confirmLiveJobs(ctx);
+      if (liveJobs.size > 0) throw new Error(reportWhileJobsRunReason([...liveJobs].map(([id, title]) => ({ id, title }))));
       const report = buildTaskReport(state.taskId, { ...params });
       return {
         content: [
@@ -186,6 +251,12 @@ export default function taskWorkerBridge(pi: ExtensionAPI): void {
       const message = parseWorkerControl(args);
       state.revision = message.revision;
     },
+  });
+
+  pi.on("tool_result", (event) => {
+    if (event.toolName !== BACKGROUND_JOB_TOOL || event.isError) return undefined;
+    noteJobs(event.details, typeof event.input.title === "string" ? event.input.title : "");
+    return undefined;
   });
 
   pi.on("tool_call", (event) => {

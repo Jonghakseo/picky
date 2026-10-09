@@ -202,6 +202,23 @@ it("keeps one RPC process across edits, background jobs, and a validated report"
   expect(harness.errors).toEqual([]);
 }, 120_000);
 
+// Live runs: workers reported blocked seconds after starting a 20-minute job, and the report's
+// shutdown killed the job. The real child must refuse that report and keep the job running.
+it("refuses a report while the worker's background job runs and keeps the job alive", async () => {
+  const harness = await createHarness();
+  const job = harness.jobLog("long-job");
+  await harness.worker.start({ revision: 1, prompt: `Task poc revision 1. CMD:START_JOB ${job} 60`, selection: selection("mock-a") });
+  const jobPid = pidFrom(await waitForFile(job, (text) => text.includes("PID=")));
+  await waitForFile(harness.markers, (text) => text.includes("DONE:START_JOB"));
+
+  await harness.worker.update({ revision: 1, prompt: "CMD:REPORT 1 blocked", selection: selection("mock-a") });
+  const refused = await waitForMarker(harness.markers, (marker) => isReportResult(marker, true));
+  expect(refused.toolResult?.text ?? "").toMatch(/still running: "task-poc-job"/);
+  expect(harness.reports).toEqual([]);
+  expect(isAlive(jobPid)).toBe(true);
+  expect(harness.exits).toEqual([]);
+}, 120_000);
+
 it("a user stop confirms the worker exit and takes its background job down with it", async () => {
   const harness = await createHarness();
   const job = harness.jobLog("job-stop");

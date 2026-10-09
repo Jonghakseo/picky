@@ -25,11 +25,21 @@ interface Harness {
   tools: Map<string, RegisteredTool>;
   commands: Map<string, RegisteredCommand>;
   activeTools: string[];
-  report(params: Record<string, unknown>): Promise<ToolResult>;
+  /** `jobs` is what bash_async list answers when the bridge asks; omitted, the bridge has nothing to ask. */
+  report(params: Record<string, unknown>, jobs?: JobListAnswer): Promise<ToolResult>;
   context(params: Record<string, unknown>): Promise<ToolResult>;
   control(args: string): Promise<void>;
   toolCall(toolName: string): unknown;
+  toolResult(event: Record<string, unknown>): void;
   beforeAgentStart(options: { selectedTools: string[]; sections: Record<string, string> }): void;
+}
+
+type JobListAnswer = Array<{ id: string; status: string; title?: string }> | "rate limited";
+
+/** The shapes bash_async returns for list: the jobs it keeps, or an error-only result when it rate-limits the query. */
+function listOutcome(answer: JobListAnswer) {
+  const details = answer === "rate limited" ? { error: "list is rate limited because nothing changed" } : { jobs: answer };
+  return { toolCall: { type: "toolCall", id: "call-1/1", name: "bash_async", arguments: { action: "list" } }, result: { content: [], details }, isError: false };
 }
 
 const envKeys = [ENV_TASK_ID, ENV_TASK_REVISION, ENV_TASK_CONTEXT_FILE, ENV_TASK_READONLY, ENV_TASK_SCOPE_APPROVED];
@@ -77,12 +87,16 @@ function load(env: Record<string, string>, tools: string[] = ["bash", "subagent"
     get activeTools() {
       return state.activeTools;
     },
-    report: (params) => tool(TASK_REPORT_TOOL).execute("call-1", params),
+    report: (params, jobs) =>
+      tool(TASK_REPORT_TOOL).execute("call-1", params, undefined, undefined, jobs === undefined ? {} : { executeTool: async () => listOutcome(jobs) }),
     context: (params) => tool(TASK_CONTEXT_TOOL).execute("call-2", params),
     control: async (args) => {
       await commands.get(WORKER_CONTROL_COMMAND)?.handler(args, {});
     },
     toolCall: (toolName) => handlers.get("tool_call")?.[0]?.({ toolName }, {}),
+    toolResult: (event) => {
+      handlers.get("tool_result")?.[0]?.({ type: "tool_result", isError: false, input: {}, content: [], ...event }, {});
+    },
     beforeAgentStart: (options) => {
       handlers.get("before_agent_start")?.[0]?.({ systemPromptOptions: options }, {});
     },
@@ -141,6 +155,64 @@ describe("task worker bridge", () => {
     expect(harness.toolCall("pickle_delegation")).toMatchObject({ block: true });
     expect(harness.toolCall("bash_async")).toBeUndefined();
     expect(harness.toolCall(TASK_REPORT_TOOL)).toBeUndefined();
+  });
+
+  // Live runs: a worker started a 20-minute job, wrote "I'll wait for it", and reported blocked;
+  // the report shut the worker down and the job with it.
+  it("refuses a report while a background job it started still runs, and takes it once the job ends", async () => {
+    const harness = load({ [ENV_TASK_ID]: "task-7", [ENV_TASK_REVISION]: "1" });
+    harness.toolResult({
+      toolName: "bash_async",
+      input: { action: "start", title: "Record clocks" },
+      details: { jobId: "job-1", status: "running", title: "Record clocks" },
+    });
+    const report = { revision: 1, status: "blocked", summary: "Still running" };
+    await expect(harness.report(report, [{ id: "job-1", status: "running", title: "Record clocks" }])).rejects.toThrow(
+      /still running: "Record clocks" \(job-1\)\. .*End your turn/,
+    );
+
+    // Reading a finished job's output carries no status and replaces its completion message,
+    // so only bash_async's own list can tell the bridge that the job ended.
+    harness.toolResult({ toolName: "bash_async", input: { action: "output", jobId: "job-1" }, details: { jobId: "job-1", nextOffset: 120 } });
+    const finished = { ...report, status: "success", summary: "Logged 120 lines" };
+    await expect(harness.report(finished, [{ id: "job-1", status: "succeeded", title: "Record clocks" }])).resolves.toBeDefined();
+  });
+
+  it("keeps refusing while bash_async rate-limits the list it is asked for", async () => {
+    const harness = load({ [ENV_TASK_ID]: "task-7", [ENV_TASK_REVISION]: "1" });
+    harness.toolResult({ toolName: "bash_async", details: { jobId: "job-1", status: "running", title: "Record clocks" } });
+    await expect(harness.report({ revision: 1, status: "success", summary: "done" }, "rate limited")).rejects.toThrow(/job-1/);
+  });
+
+  it("takes the report once each job was stopped or no longer listed", async () => {
+    const harness = load({ [ENV_TASK_ID]: "task-7", [ENV_TASK_REVISION]: "1" });
+    harness.toolResult({ toolName: "bash_async", input: { title: "Seed" }, details: { jobId: "job-2", status: "queued" } });
+    harness.toolResult({ toolName: "bash_async", details: { jobs: [{ id: "job-3", status: "running", title: "Build" }] } });
+    const report = { revision: 1, status: "success", summary: "done" };
+    await expect(
+      harness.report(report, [
+        { id: "job-2", status: "queued", title: "Seed" },
+        { id: "job-3", status: "running", title: "Build" },
+      ]),
+    ).rejects.toThrow(/"Seed" \(job-2\), "Build" \(job-3\)/);
+
+    harness.toolResult({ toolName: "bash_async", input: { action: "kill", jobId: "job-2" }, details: { jobId: "job-2", status: "killed" } });
+    await expect(harness.report(report, [])).resolves.toBeDefined();
+  });
+
+  it("does not hold a report for a job that finished inside start or a call that failed", async () => {
+    const harness = load({ [ENV_TASK_ID]: "task-7", [ENV_TASK_REVISION]: "1" });
+    harness.toolResult({ toolName: "bash_async", details: { jobId: "job-4", status: "succeeded", exitCode: 0 } });
+    harness.toolResult({ toolName: "bash_async", isError: true, details: { jobId: "job-5", status: "running" } });
+    harness.toolResult({ toolName: "bash", details: { jobId: "job-6", status: "running" } });
+    await expect(harness.report({ revision: 1, status: "success", summary: "done" })).resolves.toBeDefined();
+  });
+
+  // A stale revision is the error worth reading first: the report is ignored either way.
+  it("names the stale revision before any running job", async () => {
+    const harness = load({ [ENV_TASK_ID]: "task-7", [ENV_TASK_REVISION]: "2" });
+    harness.toolResult({ toolName: "bash_async", details: { jobId: "job-7", status: "running" } });
+    await expect(harness.report({ revision: 1, status: "success", summary: "stale" })).rejects.toThrow(/Revision 1 is not active/);
   });
 
   it("drops delegation tools from the turn and states the contract in the system prompt", () => {

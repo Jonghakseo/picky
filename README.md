@@ -51,8 +51,8 @@ Picky is the client layer for local Pi sessions and sends no separate telemetry.
       <p><b>Hand long work to a Pickle.</b> Each one runs in its own Pi session. The Dock shows running, waiting, done, and failed at a glance.</p>
     </td>
     <td width="50%" valign="top">
-      <img src="./assets/screenshots/en/05-conversation.jpg" alt="Follow the work in one card: a Pickle conversation with replies, tool activity, changed files, and the composer" />
-      <p><b>Follow the work in one card.</b> Replies, tool activity, and changed files, with the composer ready for a follow-up.</p>
+      <img src="./assets/screenshots/en/05-conversation.jpg" alt="Follow the work in one card: a Pickle conversation with replies, tool activity, the current step, and the composer" />
+      <p><b>Follow the work in one card.</b> Replies, tool activity, and the current step stay in one thread, with the composer ready for a follow-up.</p>
     </td>
   </tr>
   <tr>
@@ -62,7 +62,7 @@ Picky is the client layer for local Pi sessions and sends no separate telemetry.
     </td>
     <td width="50%" valign="top">
       <img src="./assets/screenshots/en/07-hub.jpg" alt="Look back on your work in the Hub: the Statistics page with a streak, a daily activity grid, and peak hours" />
-      <p><b>The Hub.</b> Work rhythm, AI usage, plugins, scheduled jobs, and settings in one window.</p>
+      <p><b>The Hub.</b> Work rhythm, AI usage, plugins, web access, and settings in one window.</p>
     </td>
   </tr>
 </table>
@@ -70,7 +70,7 @@ Picky is the client layer for local Pi sessions and sends no separate telemetry.
 ## Continue from your phone
 
 <p align="center">
-  <img src="./assets/screenshots/en/08-phone.jpg" alt="Away from your desk? Pick up on your phone: the phone web app lists Pickles by status and shows a staging deploy waiting for approval" width="880" />
+  <img src="./assets/screenshots/en/08-phone.jpg" alt="Away from your desk? Pick up on your phone: the phone web app lists Pickles in groups with their status and shows a staging deploy waiting for approval" width="880" />
 </p>
 
 The optional phone web app lets you check progress, answer questions, and send instructions to the same Picky and Pickle conversations while away from your Mac. Sessions still run on the Mac; the phone is another way to control them, not a separate agent service.

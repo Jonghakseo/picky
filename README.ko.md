@@ -51,8 +51,8 @@ Picky는 로컬 Pi 세션의 클라이언트 레이어이며 별도의 텔레메
       <p><b>오래 걸리는 일은 Pickle에게.</b> Pickle마다 별도 Pi 세션에서 돌아가고, Dock에서 실행·대기·완료·실패를 한눈에 봅니다.</p>
     </td>
     <td width="50%" valign="top">
-      <img src="./assets/screenshots/ko/05-conversation.jpg" alt="진행 상황은 카드 하나로: 답변, 도구 활동, 바뀐 파일, 입력창이 있는 Pickle 대화 카드" />
-      <p><b>진행 상황은 카드 하나로.</b> 답변, 도구 활동, 바뀐 파일을 보면서 바로 후속 요청을 보냅니다.</p>
+      <img src="./assets/screenshots/ko/05-conversation.jpg" alt="진행 상황은 카드 하나로: 답변, 도구 활동, 현재 진행 단계, 입력창이 있는 Pickle 대화 카드" />
+      <p><b>진행 상황은 카드 하나로.</b> 답변, 도구 활동, 현재 진행 단계를 한 대화에서 보면서 바로 후속 요청을 보냅니다.</p>
     </td>
   </tr>
   <tr>
@@ -62,7 +62,7 @@ Picky는 로컬 Pi 세션의 클라이언트 레이어이며 별도의 텔레메
     </td>
     <td width="50%" valign="top">
       <img src="./assets/screenshots/ko/07-hub.jpg" alt="맡긴 일을 Hub에서 돌아보세요: 연속 기록, 날짜별 활동, 주로 맡기는 시간이 보이는 통계 페이지" />
-      <p><b>Hub.</b> 작업 리듬, AI 사용량, 플러그인, 예약 작업, 설정을 한 창에서 관리합니다.</p>
+      <p><b>Hub.</b> 작업 리듬, AI 사용량, 플러그인, 웹 접속, 설정을 한 창에서 관리합니다.</p>
     </td>
   </tr>
 </table>
@@ -70,7 +70,7 @@ Picky는 로컬 Pi 세션의 클라이언트 레이어이며 별도의 텔레메
 ## 폰에서도 같은 작업 이어가기
 
 <p align="center">
-  <img src="./assets/screenshots/ko/08-phone.jpg" alt="자리를 비워도 폰에서 이어서: 휴대폰 웹 앱에 상태별 Pickle 목록과 승인을 기다리는 스테이징 배포가 표시됨" width="880" />
+  <img src="./assets/screenshots/ko/08-phone.jpg" alt="자리를 비워도 폰에서 이어서: 휴대폰 웹 앱에 그룹으로 묶인 Pickle 목록과 승인을 기다리는 스테이징 배포가 표시됨" width="880" />
 </p>
 
 선택 기능인 휴대폰 웹 앱에서 Mac을 떠나서도 같은 Picky·Pickle 대화의 진행 상태를 확인하고, 질문에 답하고, 새 지시를 보낼 수 있습니다. 세션은 계속 Mac에서 실행됩니다. 폰은 별도 에이전트 서비스가 아니라 같은 작업을 조작하는 또 하나의 화면입니다.

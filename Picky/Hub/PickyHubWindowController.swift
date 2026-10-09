@@ -36,8 +36,19 @@ final class PickyHubWindowController: NSObject, NSWindowDelegate {
 
     /// Create-or-focus. Page/scroll state lives in the navigator and the
     /// mounted SwiftUI tree, so reopening lands where the user left off.
-    func show(fromDisplayID displayID: CGDirectDisplayID? = nil) {
-        let shouldRelocate = !(isVisible || window?.isMiniaturized == true)
+    func show(fromDisplayID requestedDisplayID: CGDirectDisplayID? = nil) {
+        // The Hub cannot join another app's full-screen Space, so a request
+        // from such a display lands on a display with a normal Space instead.
+        let displayID = PickyHubPresentationDisplayPolicy.destination(
+            requested: requestedDisplayID,
+            currentWindowDisplay: window?.screen?.pickyDisplayID,
+            displays: PickyHubDisplaySnapshot.displays(),
+            externalWindowFrames: requestedDisplayID == nil ? [] : PickyHubDisplaySnapshot.externalWindowFrames()
+        )
+        // An open Hub left on a Space now covered by a full-screen app would
+        // otherwise be moved by AppKit and clamped into another screen's corner.
+        let isStrandedBehindFullScreen = displayID != requestedDisplayID && window?.isOnActiveSpace == false
+        let shouldRelocate = !(isVisible || window?.isMiniaturized == true) || isStrandedBehindFullScreen
         presentingDisplayID = displayID ?? presentingDisplayID
         if window == nil { createWindow() }
         guard let window else { return }

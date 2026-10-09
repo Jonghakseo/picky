@@ -227,23 +227,21 @@ enum DS {
     }
 
     // MARK: - Group Accent Palette
-    // Solid accent colors for user-created dock groups (2px bar + header text).
-    // Values that coincide with an existing semantic token reference it directly
-    // so the two never drift; the remaining hues are group-only accents.
+    // Accent colors for user-created dock groups: header swatch, folder glyph,
+    // and the faint group-card tint. These are graphics, not text, so they do
+    // not borrow the semantic `*Text` tokens: those darken to brown/maroon in
+    // light mode for text contrast, which made amber and red read as one hue.
+    // Every hue flips together on one ramp: light uses the 600 step (>=3:1
+    // graphic contrast on light surfaces), dark keeps the brighter 400 step.
 
     enum GroupAccent {
-        /// Coincides with `Colors.success` (emerald).
-        static let teal = Colors.success
-        /// Coincides with `Colors.warningText` amber tone.
-        static let amber = Colors.warningText
-        /// Coincides with `Colors.info` blue tone.
-        static let blue = Colors.info
-        /// Coincides with `Colors.destructiveText` red tone.
-        static let red = Colors.destructiveText
-        /// Group-only hues (no existing semantic role).
-        static let pink = Color(hex: "#EC4899")
-        static let purple = Color(hex: "#A78BFA")
-        static let gray = Color(hex: "#8C8C92")
+        static let teal = Color(light: Color(hex: "#059669"), dark: Color(hex: "#34D399"))    // Emerald 600 / 400
+        static let amber = Color(light: Color(hex: "#D97706"), dark: Color(hex: "#F1A10D"))   // Amber 600 / Radix Amber 11
+        static let blue = Color(light: Color(hex: "#2563EB"), dark: Color(hex: "#70B8FF"))    // Blue 600 / Radix Blue 9
+        static let red = Color(light: Color(hex: "#DC2626"), dark: Color(hex: "#FF6369"))     // Red 600 / Radix Red 11
+        static let pink = Color(light: Color(hex: "#DB2777"), dark: Color(hex: "#EC4899"))    // Pink 600 / 500
+        static let purple = Color(light: Color(hex: "#7C3AED"), dark: Color(hex: "#A78BFA"))  // Violet 600 / 400
+        static let gray = Color(light: Color(hex: "#71717A"), dark: Color(hex: "#8C8C92"))    // Zinc 500 / neutral
     }
 
     // MARK: - Integration Colors

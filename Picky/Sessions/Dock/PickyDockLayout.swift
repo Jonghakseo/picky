@@ -72,14 +72,19 @@ enum PickyDockGroupColor: Int, Codable, CaseIterable, Identifiable {
     #if canImport(AppKit)
     /// Small rounded-square swatch in the accent color, shown beside each
     /// entry in the color picker submenu. Matches the dock group header.
+    /// Drawn lazily so the light/dark accent resolves against the appearance
+    /// of the menu that displays it, not whatever was current when the image
+    /// was built (a `lockFocus` snapshot froze the system appearance, so the
+    /// swatch disagreed with the header when Picky's mode differed).
     var menuSwatchImage: NSImage {
         let diameter: CGFloat = 10
         let size = NSSize(width: diameter, height: diameter)
-        let image = NSImage(size: size)
-        image.lockFocus()
-        NSColor(accent).setFill()
-        NSBezierPath(roundedRect: NSRect(origin: .zero, size: size), xRadius: 2.5, yRadius: 2.5).fill()
-        image.unlockFocus()
+        let fill = NSColor(accent)
+        let image = NSImage(size: size, flipped: false) { rect in
+            fill.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 2.5, yRadius: 2.5).fill()
+            return true
+        }
         image.isTemplate = false
         return image
     }

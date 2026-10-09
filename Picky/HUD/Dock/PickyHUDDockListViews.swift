@@ -954,6 +954,8 @@ enum PickyHUDDockGroupColorMenu {
         guard let event = NSApp.currentEvent, let view = event.window?.contentView else { return }
         let target = Target(onSelect: onSelect)
         let menu = NSMenu()
+        // Picky sets light/dark per view, not on NSApp; follow the dock's mode.
+        menu.appearance = view.effectiveAppearance
         for color in PickyDockGroupColor.palette {
             let item = NSMenuItem(title: color.localizedName, action: #selector(Target.select(_:)), keyEquivalent: "")
             item.target = target

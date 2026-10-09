@@ -34175,6 +34175,182 @@
           }
         }
       }
+    },
+    "hub.calendar.jobs": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By job"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업별"
+          }
+        }
+      }
+    },
+    "hub.calendar.nextRun": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next run"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 실행"
+          }
+        }
+      }
+    },
+    "hub.calendar.noUpcoming": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No upcoming runs"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예정된 실행이 없어요"
+          }
+        }
+      }
+    },
+    "hub.calendar.periodRuns": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld runs in this period"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 기간 실행 %lld회"
+          }
+        }
+      }
+    },
+    "hub.calendar.repeatingCount": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld repeating"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "반복 %lld개"
+          }
+        }
+      }
+    },
+    "hub.calendar.runTimes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld runs"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld회"
+          }
+        }
+      }
+    },
+    "hub.calendar.jobColumn": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Job"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업"
+          }
+        }
+      }
+    },
+    "hub.calendar.repeatingSection": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repeating jobs · %lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "반복 작업 %lld개"
+          }
+        }
+      }
+    },
+    "hub.calendar.oneTimeSection": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run once · %lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한 번 실행 %lld개"
+          }
+        }
+      }
+    },
+    "hub.calendar.cellHint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click a mark to see that day’s runs."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "칸을 누르면 그날 실행 기록이 열려요."
+          }
+        }
+      }
+    },
+    "hub.calendar.repeatingHint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repeating jobs share one line. Click it to see them."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "반복 작업은 한 줄로 묶었어요. 누르면 목록이 열려요."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

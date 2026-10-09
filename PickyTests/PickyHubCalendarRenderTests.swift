@@ -38,7 +38,7 @@ struct PickyHubCalendarRenderTests {
         )
         try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
             for dark in [false, true] {
-                let view = PickyHubCronCalendarView(jobs: [job], now: now)
+                let view = PickyHubCronCalendarView(jobs: [job], now: now, mode: .week)
                     .environment(\.locale, Locale(identifier: "en_US"))
                     .preferredColorScheme(dark ? .dark : .light)
                     .padding(20).background(PickyHubTheme.Colors.canvas)
@@ -105,7 +105,7 @@ struct PickyHubCalendarRenderTests {
         ]
         try LocaleManager.shared.withTemporaryChoiceForTesting(.english) {
             for (width, month, height) in [(900.0, true, 1300.0), (510.0, false, 660.0)] {
-                let image = try rasterize(PickyHubCronCalendarView(jobs: [job, history], now: now, showsMonth: month)
+                let image = try rasterize(PickyHubCronCalendarView(jobs: [job, history], now: now, mode: month ? .month : .week)
                     .environment(\.locale, Locale(identifier: "en_US")), name: "calendar-\(month ? "month" : "agenda")", width: width, height: height)
                 let text = try recognizedLines(image).joined(separator: " ")
                 #expect(!text.contains("Recurring") && !text.contains("One-time"))
@@ -114,6 +114,13 @@ struct PickyHubCalendarRenderTests {
                         "Both recorded execution days must be visible alongside the future job: \(text)")
                 if !month { #expect(text.contains("Agenda")) }
             }
+            // The default view lists each job once, with its planned run in the summary.
+            let image = try rasterize(PickyHubCronCalendarView(jobs: [job, history], now: now)
+                .environment(\.locale, Locale(identifier: "en_US")), name: "calendar-jobs", width: 900, height: 520)
+            let text = try recognizedLines(image).joined(separator: " ")
+            #expect(text.contains("By job") && text.contains("Next run"), "Job view must be the default: \(text)")
+            #expect(text.contains("Backup documents"), "Name must remain readable: \(text)")
+            #expect(text.components(separatedBy: "Past backup").count == 2, "One row for both executions: \(text)")
         }
     }
 
@@ -231,7 +238,7 @@ private final class CronCalendarHistoryFixture: ObservableObject {
 private struct CronCalendarHistoryFixtureView: View {
     @ObservedObject var fixture: CronCalendarHistoryFixture
     var body: some View {
-        PickyHubCronCalendarView(jobs: fixture.jobs, now: fixture.now, loadedHistoryInterval: fixture.loadedInterval,
+        PickyHubCronCalendarView(jobs: fixture.jobs, now: fixture.now, mode: .week, loadedHistoryInterval: fixture.loadedInterval,
             onVisibleIntervalChange: { fixture.requested = $0 })
             .environment(\.locale, Locale(identifier: "en_US"))
             .preferredColorScheme(.light)

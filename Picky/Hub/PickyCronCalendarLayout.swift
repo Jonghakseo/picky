@@ -18,6 +18,10 @@ struct PickyCronCalendarLayout {
     let eventsByDay: [Date: [PickyCronCalendarOccurrence]]
     let dayGroups: [Date: [PickyCronCalendarGroup]]
     let hourGroups: [Date: [Int: [PickyCronCalendarGroup]]]
+    /// Month cells list one-time jobs individually and fold recurring jobs into one line.
+    let oneTimeDayGroups: [Date: [PickyCronCalendarGroup]]
+    let repeatingByDay: [Date: [PickyCronCalendarOccurrence]]
+    let jobRows: [PickyCronCalendarJobRow]
 
     init(_ input: PickyCronCalendarInput) {
         result = PickyCronCalendarProjection.occurrences(
@@ -31,6 +35,15 @@ struct PickyCronCalendarLayout {
             Dictionary(grouping: day) { input.calendar.component(.hour, from: $0.date) }
                 .mapValues(PickyCronCalendarPresentation.groups)
         }
+        oneTimeDayGroups = eventsByDay.compactMapValues { day in
+            let items = day.filter { !PickyCronCalendarPresentation.isRepeating($0.job) }
+            return items.isEmpty ? nil : PickyCronCalendarPresentation.groups(items)
+        }
+        repeatingByDay = eventsByDay.compactMapValues { day in
+            let items = day.filter { PickyCronCalendarPresentation.isRepeating($0.job) }
+            return items.isEmpty ? nil : items
+        }
+        jobRows = PickyCronCalendarPresentation.jobRows(events, calendar: input.calendar)
     }
 }
 

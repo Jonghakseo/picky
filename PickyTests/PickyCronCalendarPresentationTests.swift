@@ -86,8 +86,67 @@ struct PickyCronCalendarPresentationTests {
         #expect(data.layout.hourGroups.isEmpty)
     }
 
+    @Test func foldedMarksReportFailuresAndNeverClaimSuccessWithoutExitCode() {
+        let date = Date(timeIntervalSince1970: 100)
+        func run(_ code: Int?) -> PickyCronCalendarOccurrence {
+            .init(job: job(), date: date, kind: .actual, execution: .init(date: date, exitCode: code))
+        }
+        let next = PickyCronCalendarOccurrence(job: job(), date: date, kind: .next)
+        let projected = PickyCronCalendarOccurrence(job: job(), date: date, kind: .projected)
+        #expect(PickyCronCalendarPresentation.dayStatus([run(0), run(1), run(0)]) == .failed)
+        #expect(PickyCronCalendarPresentation.dayStatus([run(0), run(0)]) == .succeeded)
+        #expect(PickyCronCalendarPresentation.dayStatus([run(0), run(nil)]) == .executed)
+        #expect(PickyCronCalendarPresentation.dayStatus([run(0), next]) == .succeeded)
+        #expect(PickyCronCalendarPresentation.dayStatus([projected, next]) == .scheduled)
+        #expect(PickyCronCalendarPresentation.dayStatus([projected]) == .projected)
+        #expect(PickyCronCalendarPresentation.dayStatus([]) == nil)
+    }
+
+    @Test func monthFoldsRepeatingJobsAndJobRowsListThemFirst() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let day = calendar.startOfDay(for: Date(timeIntervalSince1970: 1_789_696_800))
+        let once = PickyCronJobPresentation(id: "once", name: "One-off", status: .active, enabled: true, schedule: nil,
+            runAtText: nil, nextRunAt: day.addingTimeInterval(8 * 3600), lastRunAt: nil, completedAt: nil, lastExitCode: nil)
+        var daily = job("0 9 * * *")
+        daily.executions = [.init(date: day.addingTimeInterval(-15 * 3600), exitCode: 1)]
+        let input = PickyCronCalendarInput(jobs: [once, daily, job("30 9 * * *").renamed("other")],
+            interval: .init(start: day.addingTimeInterval(-86400), duration: 3 * 86400), now: day, calendar: calendar)
+        let layout = PickyCronCalendarLayout(input)
+
+        #expect(layout.oneTimeDayGroups[day]?.map(\.event.job.id) == ["once"])
+        #expect(Set(layout.repeatingByDay[day]?.map(\.job.id) ?? []) == ["test", "other"])
+        #expect(layout.oneTimeDayGroups[day.addingTimeInterval(86400)] == nil)
+        #expect(layout.jobRows.map(\.id) == ["test", "other", "once"])
+        let yesterday = day.addingTimeInterval(-86400)
+        #expect(PickyCronCalendarPresentation.dayStatus(layout.repeatingByDay[yesterday] ?? []) == .failed)
+        #expect(layout.jobRows[0].occurrencesByDay[yesterday]?.count == 1)
+        #expect(layout.jobRows[2].occurrencesByDay.keys.sorted() == [day])
+    }
+
+    @Test func nextRunUsesEnabledFutureRunsAcrossAllJobs() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        func make(_ id: String, enabled: Bool = true, next: Date?) -> PickyCronJobPresentation {
+            .init(id: id, name: id, status: .active, enabled: enabled, schedule: "0 9 * * *",
+                  runAtText: nil, nextRunAt: next, lastRunAt: nil, completedAt: nil, lastExitCode: nil)
+        }
+        let jobs = [make("past", next: now.addingTimeInterval(-60)),
+                    make("disabled", enabled: false, next: now.addingTimeInterval(60)),
+                    make("later", next: now.addingTimeInterval(7200)),
+                    make("soon", next: now.addingTimeInterval(600))]
+        #expect(PickyCronCalendarPresentation.nextRun(jobs: jobs, now: now)?.job.id == "soon")
+        #expect(PickyCronCalendarPresentation.nextRun(jobs: Array(jobs.prefix(2)), now: now) == nil)
+    }
+
     private func job(_ schedule: String = "0 9 * * *") -> PickyCronJobPresentation {
         .init(id: "test", name: "Calendar job", status: .active, enabled: true, schedule: schedule,
               runAtText: nil, nextRunAt: nil, lastRunAt: nil, completedAt: nil, lastExitCode: 0)
+    }
+}
+
+private extension PickyCronJobPresentation {
+    func renamed(_ id: String) -> PickyCronJobPresentation {
+        .init(id: id, name: id, status: status, enabled: enabled, schedule: schedule, runAtText: runAtText,
+              nextRunAt: nextRunAt, lastRunAt: lastRunAt, completedAt: completedAt, lastExitCode: lastExitCode)
     }
 }

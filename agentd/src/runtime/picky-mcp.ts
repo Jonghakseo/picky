@@ -74,7 +74,7 @@ export function loadPiMcpInternals(): Promise<PiMcpInternals> {
       load("./extensions/mcp/cli.js"),
       load("./core/auth-storage.js"),
     ]);
-    const loaded = {
+    const loaded: Record<keyof PiMcpInternals, unknown> = {
       loadMcpConfig: config.loadMcpConfig,
       addMcpServerConfig: config.addMcpServerConfig,
       removeMcpServerConfig: config.removeMcpServerConfig,
@@ -86,7 +86,9 @@ export function loadPiMcpInternals(): Promise<PiMcpInternals> {
     };
     const missing = Object.entries(loaded).filter(([, value]) => typeof value !== "function").map(([name]) => name);
     if (missing.length > 0) throw new Error(`Pi SDK MCP internals moved: ${missing.join(", ")}`);
-    return loaded as unknown as PiMcpInternals;
+    // Every member is a function (checked above); their signatures are Pi internals that only
+    // the TypeScript declarations above describe.
+    return loaded as PiMcpInternals;
   })();
   internals.catch(() => { internals = undefined; });
   return internals;

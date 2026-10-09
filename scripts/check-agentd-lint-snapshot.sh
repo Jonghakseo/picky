@@ -27,22 +27,24 @@ case "$MODE" in
     ;;
 esac
 
-ESLINT="$ROOT/agentd/node_modules/.bin/eslint"
-if [ ! -x "$ESLINT" ]; then
+OXLINT="$ROOT/agentd/node_modules/.bin/oxlint"
+if [ ! -x "$OXLINT" ]; then
   echo "❌ agentd snapshot lint: dependencies are missing. Run 'pnpm install'." >&2
   exit 127
 fi
-if [ ! -d "$SNAPSHOT/agentd/src" ] || [ ! -f "$SNAPSHOT/agentd/eslint.config.js" ]; then
+if [ ! -d "$SNAPSHOT/agentd/src" ] || [ ! -f "$SNAPSHOT/agentd/.oxlintrc.json" ]; then
   echo "❌ agentd snapshot lint: $LABEL does not contain the agentd lint inputs." >&2
   exit 1
 fi
 
+# pnpm keeps package contents in the root store; bin shims such as tsgolint resolve it relatively.
+ln -s "$ROOT/node_modules" "$SNAPSHOT/node_modules"
 ln -s "$ROOT/agentd/node_modules" "$SNAPSHOT/agentd/node_modules"
 
 echo "▶ agentd: lint $LABEL (zero warnings)"
 (
   cd "$SNAPSHOT/agentd"
-  "$ESLINT" src --max-warnings 0
+  "$OXLINT" src --max-warnings 0
 )
 
 ALLOWLIST="$SNAPSHOT/scripts/eslint-suppressions.json"

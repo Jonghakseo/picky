@@ -8,7 +8,7 @@ import { defaultAppSupportRoot } from "./artifact-store.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
-import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
+import { PiSdkRuntime, type PiSdkRuntimeOptions } from "./runtime/pi-sdk-runtime.js";
 import { qualifyAsyncProviders } from "./runtime/qualified-async-providers.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyAskUserQuestionTool } from "./runtime/ask-user-question-tool.js";
@@ -64,6 +64,8 @@ interface ComposeOverrides {
   mainRuntimeFactory?: (config: AgentdConfig, supervisorRef: { current?: SessionSupervisor }, currentDefaultCwd: { value: string }) => AgentRuntime | undefined;
   stabilizeCwd?: (targetDir: string) => ProcessCwdStabilizerResult;
   asyncProviderCapsule?: { root: string; lockPath: string };
+  /** Builds every Pi SDK runtime (Pickle and main). Tests wrap it to observe the composed options. */
+  createPiSdkRuntime?: (options: PiSdkRuntimeOptions) => PiSdkRuntime;
 }
 
 interface ComposeResult {
@@ -371,7 +373,8 @@ function createPickleRuntime(config: AgentdConfig, overrides: ComposeOverrides):
   logAgentd("async task rollout", { requested: config.asyncTaskRollout ?? "on", capsuleQualified: hostedAsync });
   if (overrides.runtimeFactory) return { runtime: overrides.runtimeFactory(config), hostedAsync };
   if (config.useMockRuntime) return { runtime: new MockRuntime(), hostedAsync };
-  return { runtime: new PiSdkRuntime({
+  const createPiSdkRuntime = overrides.createPiSdkRuntime ?? ((options: PiSdkRuntimeOptions) => new PiSdkRuntime(options));
+  return { runtime: createPiSdkRuntime({
     thinkingLevel: config.pickleThinkingLevel,
     modelPattern: config.pickleModelPattern,
     customTools: [createPickyAskUserQuestionTool()],
@@ -432,7 +435,8 @@ function buildPrimaryMainRuntime(
   // prompt without recreating the main handle.
   let disabledMainBuiltinTools: ReadonlySet<string> = new Set();
 
-  const piMainRuntime = new PiSdkRuntime({
+  const createPiSdkRuntime = overrides.createPiSdkRuntime ?? ((options: PiSdkRuntimeOptions) => new PiSdkRuntime(options));
+  const piMainRuntime = createPiSdkRuntime({
     thinkingLevel: config.mainAgentThinkingLevel,
     modelPattern: config.mainAgentModelPattern,
     // The main overlay can answer ask_user_question, but has no surface for other

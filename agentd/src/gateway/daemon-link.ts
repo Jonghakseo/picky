@@ -17,7 +17,7 @@ export const DAEMON_COMMAND_TIMEOUT_MS = 10_000;
 const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 10_000;
 
-export interface DaemonSnapshotFrame {
+export type DaemonSnapshotFrame = {
   type: "sessionProjectionSnapshot";
   requestId?: string;
   sessionId: string;
@@ -26,16 +26,16 @@ export interface DaemonSnapshotFrame {
   complete: boolean;
   omittedFields: string[];
   projection: PickyAgentSession;
-}
+};
 
-export interface DaemonTransactionFrame {
+export type DaemonTransactionFrame = {
   type: "sessionProjectionTransaction";
   sessionId: string;
   epoch: string;
   baseRevision: number;
   revision: number;
   mutations: PickySessionProjectionMutation[];
-}
+};
 
 export interface DaemonEvent {
   type: string;
@@ -222,12 +222,13 @@ export class DaemonLink {
     }
     this.resolveMatching(event);
 
+    // Frames from our own daemon are trusted without re-validation (see the file header).
     if (event.type === "sessionProjectionSnapshot") {
-      this.handlers.onSnapshot(event as unknown as DaemonSnapshotFrame);
+      this.handlers.onSnapshot(event as DaemonSnapshotFrame);
       return;
     }
     if (event.type === "sessionProjectionTransaction") {
-      this.handlers.onTransaction(event as unknown as DaemonTransactionFrame);
+      this.handlers.onTransaction(event as DaemonTransactionFrame);
       return;
     }
     this.handlers.onEvent(event);

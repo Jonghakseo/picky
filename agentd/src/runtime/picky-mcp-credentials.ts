@@ -106,7 +106,9 @@ export function createPickyMcpCredentials(agentDir: string, internals: Pick<PiMc
       });
     },
   };
-  return store as unknown as PickyMcpCredentials;
+  // Pi types the option as its McpOAuthCredentialStore class, whose private lock and backend
+  // fields an object literal cannot carry. runMcpCommand only calls the public methods above.
+  return store as PickyMcpCredentials;
 }
 
 function parseStates(content: string | undefined): States {

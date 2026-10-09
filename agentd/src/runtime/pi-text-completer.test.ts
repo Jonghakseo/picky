@@ -2,8 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentSessionServices } from "@earendil-works/pi-coding-agent";
 import { lowCostAuthenticatedModelFromServices, selectLowCostAuthenticatedModel } from "./pi-text-completer.js";
 
-const { resolveScope } = vi.hoisted(() => ({ resolveScope: vi.fn() }));
-vi.mock("./pi-model-resolution.js", () => ({ scopedModelsFromServices: resolveScope }));
+const resolveNoScopedModels = async () => [];
 
 const models = [
   {
@@ -34,26 +33,24 @@ const models = [
 
 describe("PiTextCompleter model selection", () => {
   it("does not broaden a nonempty enabledModels scope when no model resolves", async () => {
-    resolveScope.mockResolvedValueOnce([]);
     const getAvailable = vi.fn().mockResolvedValue(models);
     const services = {
       settingsManager: { getEnabledModels: () => ["excluded-provider/unavailable-model"] },
       modelRuntime: { getAvailable, hasConfiguredAuth: () => true },
     } as unknown as AgentSessionServices;
 
-    expect(await lowCostAuthenticatedModelFromServices(services)).toBeUndefined();
+    expect(await lowCostAuthenticatedModelFromServices(services, resolveNoScopedModels)).toBeUndefined();
     expect(getAvailable).not.toHaveBeenCalled();
   });
 
   it("uses the authenticated catalogue only when no effective model scope is configured", async () => {
-    resolveScope.mockResolvedValueOnce([]);
     const getAvailable = vi.fn().mockResolvedValue(models);
     const services = {
       settingsManager: { getEnabledModels: () => undefined },
       modelRuntime: { getAvailable, hasConfiguredAuth: (provider: string) => provider === "anthropic" },
     } as unknown as AgentSessionServices;
 
-    expect((await lowCostAuthenticatedModelFromServices(services))?.id).toBe("authenticated-low-cost");
+    expect((await lowCostAuthenticatedModelFromServices(services, resolveNoScopedModels))?.id).toBe("authenticated-low-cost");
     expect(getAvailable).toHaveBeenCalledOnce();
   });
 

@@ -19,13 +19,14 @@
     "typecheck:web": "tsc -p web/tsconfig.json --noEmit && tsc -p web/tsconfig.sw.json --noEmit",
     "check:web-taps": "node web/tools/hit-test.mjs",
     "check:web-keyboard": "node web/tools/keyboard-check.mjs",
-    "lint": "eslint src --max-warnings 0",
-    "lint:fix": "eslint src --fix --max-warnings 0",
+    "lint": "oxlint src --max-warnings 0",
+    "lint:fix": "oxlint src --fix --max-warnings 0",
     "test": "vitest run",
     "test:ci": "vitest run --exclude src/server.test.ts --exclude src/session-supervisor.test.ts && vitest run src/session-supervisor.test.ts src/server.test.ts --no-file-parallelism",
     "test:serial": "vitest run --no-file-parallelism",
     "gen:contracts": "tsx scripts/gen-contracts.ts",
-    "test:contracts": "vitest run src/protocol.test.ts src/prompt-builder.test.ts src/pi-event-normalizer.test.ts"
+    "test:contracts": "vitest run src/protocol.test.ts src/prompt-builder.test.ts src/pi-event-normalizer.test.ts",
+    "test:lint-rules": "for f in lint/anti-slop/rules/*.rule-test.ts; do tsx \"$f\" || exit 1; done"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.1.0",
@@ -40,20 +41,19 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
+    "@oxlint/plugins": "1.87.0",
     "@preact/signals": "2.11.3",
     "@types/node": "^24.0.0",
     "@types/proper-lockfile": "4.1.4",
     "@types/ws": "^8.5.13",
     "esbuild": "0.27.7",
-    "eslint": "^10.4.1",
-    "globals": "^17.6.0",
     "jsqr": "1.4.0",
     "marked": "18.0.11",
+    "oxlint": "1.87.0",
+    "oxlint-tsgolint": "7.0.2003",
     "preact": "10.29.8",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "typescript-eslint": "^8.60.1",
     "vitest": "^2.1.8"
   }
 }

@@ -100,7 +100,7 @@ export function trySetThinkingLevel(session: AgentSession, sessionId: string, le
 }
 
 export function availableThinkingLevels(session: AgentSession, sessionId: string): ThinkingLevel[] {
-  const method = (session as unknown as { getAvailableThinkingLevels?: () => unknown }).getAvailableThinkingLevels;
+  const method = session.getAvailableThinkingLevels;
   if (typeof method !== "function") {
     warnOnceForAbsence(sessionId, "getAvailableThinkingLevels");
     return [];
@@ -178,6 +178,7 @@ export async function tryReload(session: AgentSession, sessionId: string, option
  * contract test; callers must fail visibly if it disappears.
  */
 export async function reloadModelRuntimeCredentials(modelRuntime: ModelRuntime, sessionId: string): Promise<void> {
+  // eslint-disable-next-line anti-slop/no-chained-type-assertions -- ModelRuntime.credentials is private in Pi's types; this documented sniff is the only way to reach reload.
   const credentialStore = (modelRuntime as unknown as { credentials?: { store?: { reload?: () => void } } }).credentials?.store;
   if (typeof credentialStore?.reload !== "function") {
     warnOnceForAbsence(sessionId, "modelRuntime.credentials.reload");
@@ -188,7 +189,7 @@ export async function reloadModelRuntimeCredentials(modelRuntime: ModelRuntime, 
   await modelRuntime.refresh({ allowNetwork: false });
 }
 
-export function tryRefreshSystemPromptFromActiveTools(session: AgentSession, sessionId: string): boolean {
+export function tryRefreshSystemPromptFromActiveTools(session: AgentSession, sessionId: string, log: typeof logAgentd = logAgentd): boolean {
   const candidate = session;
   if (typeof candidate.getActiveToolNames !== "function" || typeof candidate.setActiveToolsByName !== "function") {
     warnOnceForAbsence(sessionId, "getActiveToolNames/setActiveToolsByName");
@@ -200,7 +201,7 @@ export function tryRefreshSystemPromptFromActiveTools(session: AgentSession, ses
     candidate.setActiveToolsByName.call(session, candidate.getActiveToolNames.call(session));
     return true;
   } catch (error) {
-    logAgentd("pi capability refresh system prompt failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
+    log("pi capability refresh system prompt failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
     return false;
   }
 }

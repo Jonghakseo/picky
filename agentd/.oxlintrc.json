@@ -1,0 +1,56 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "oxc"],
+  "categories": {
+    "correctness": "off"
+  },
+  "options": {
+    "typeAware": true
+  },
+  "env": {
+    "es2022": true,
+    "node": true
+  },
+  "ignorePatterns": ["dist/**", "build/**", "scratch/**", "lint/**", "src/**/*.mjs", "src/**/*.js"],
+  "jsPlugins": [{ "name": "anti-slop", "specifier": "./lint/anti-slop/index.ts" }],
+  "rules": {
+    "typescript/consistent-type-imports": ["warn", { "prefer": "type-imports", "fixStyle": "separate-type-imports" }],
+    "typescript/no-explicit-any": "warn",
+    "typescript/no-floating-promises": ["warn", { "ignoreVoid": true, "ignoreIIFE": true }],
+    "typescript/switch-exhaustiveness-check": "warn",
+    "typescript/ban-ts-comment": [
+      "warn",
+      {
+        "ts-ignore": "allow-with-description",
+        "ts-expect-error": "allow-with-description",
+        "ts-nocheck": true,
+        "ts-check": false,
+        "minimumDescriptionLength": 10
+      }
+    ],
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "max-lines": ["warn", { "max": 1500, "skipBlankLines": true, "skipComments": true }],
+    "max-lines-per-function": ["warn", { "max": 120, "skipBlankLines": true, "skipComments": true }],
+    "complexity": ["warn", { "max": 18 }],
+    "oxc/no-accumulating-spread": "warn",
+    "anti-slop/no-chained-type-assertions": "warn",
+    "anti-slop/no-module-mocking": "warn",
+    "anti-slop/no-widen-then-assert": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["src/local-log.ts", "src/main.ts", "src/**/*.test.ts", "src/__tests__/**/*.ts"],
+      "rules": {
+        "no-console": "off",
+        "max-lines": "off",
+        "max-lines-per-function": "off"
+      }
+    },
+    {
+      "files": ["src/**/*.test.ts", "src/__tests__/**/*.ts"],
+      "rules": {
+        "anti-slop/no-chained-type-assertions": "off"
+      }
+    }
+  ]
+}

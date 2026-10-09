@@ -3,6 +3,7 @@ import { type Static, Type } from "typebox";
 import type { DelegationDecisionRecord } from "../domain/main-task-policy.js";
 import type { TaskRecord } from "./task/types.js";
 import type { MainTaskEvaluationContext } from "./task/picky-task-runtime.js";
+import { resolveAskUserQuestion } from "./extension-ui-bridge.js";
 
 /** The main-task service surface the tools use. Implemented by `application/main-task-service.ts`. */
 export interface MainTaskToolPort {
@@ -193,9 +194,8 @@ async function askDecision(port: MainTaskToolPort, params: DelegationInput, ctx:
   });
   // A repeated ask about the same Task returns the decision it already holds.
   if (decision.state !== "pending") return result(describeDecision(decision), { decisionId: decision.id, state: decision.state });
-  const ui = ctx.ui as unknown as Record<string, unknown>;
-  const askUserQuestion = ui.askUserQuestion ?? ui.ask_user_question;
-  if (!ctx.hasUI || typeof askUserQuestion !== "function") {
+  const askUserQuestion = resolveAskUserQuestion(ctx.ui);
+  if (!ctx.hasUI || !askUserQuestion) {
     return result(`${describeDecision(decision)} Picky could not show the question; ask the user in your reply and resolve the decision from their answer.`, { decisionId: decision.id, state: decision.state });
   }
   // The same decision is also a block in Picky's conversation and on a paired phone. If the user
@@ -208,7 +208,7 @@ async function askDecision(port: MainTaskToolPort, params: DelegationInput, ctx:
   });
   let answer: unknown;
   try {
-    answer = await (askUserQuestion as (request: unknown, options?: { signal?: AbortSignal }) => Promise<unknown>)(delegationQuestion(params), { signal: answeredElsewhere.signal });
+    answer = await askUserQuestion(delegationQuestion(params), { signal: answeredElsewhere.signal });
   } finally {
     stopWatching();
     signal?.removeEventListener("abort", forwardAbort);

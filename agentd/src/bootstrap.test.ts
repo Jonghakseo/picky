@@ -5,35 +5,40 @@ import { join } from "node:path";
 import type { InlineExtension } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 
-interface CapturedPiSdkRuntimeOptions {
-  asyncProviderPaths?: string[];
-  asyncAdmissionDrain?: boolean | (() => boolean);
-  asyncProvidersQualified?: boolean;
-  resourceLoaderOptions?: { extensionFactories?: InlineExtension[] };
-}
 
-const { piSdkRuntimeOptions } = vi.hoisted(() => ({
-  piSdkRuntimeOptions: [] as CapturedPiSdkRuntimeOptions[],
-}));
-
-vi.mock("./runtime/pi-sdk-runtime.js", () => ({
-  PiSdkRuntime: class {
-    constructor(options: CapturedPiSdkRuntimeOptions = {}) {
-      piSdkRuntimeOptions.push(options);
-    }
-
-    setCustomTools(): void {}
-  },
-}));
-
-import { composeAgentdServices, createSingleUseSessionIdFactory, parseAgentdConfig, primeSessionIdFactoryForResume, type AgentdConfig } from "./bootstrap.js";
+import { composeAgentdServices as composeServices, createSingleUseSessionIdFactory, parseAgentdConfig, primeSessionIdFactoryForResume, type AgentdConfig } from "./bootstrap.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
+import { PiSdkRuntime, type PiSdkRuntimeOptions } from "./runtime/pi-sdk-runtime.js";
 import type { PickyContextPacket } from "./protocol.js";
 import type { AgentRuntime, RuntimeCreateOptions } from "./runtime/types.js";
 
+const piSdkRuntimeOptions: PiSdkRuntimeOptions[] = [];
+
+/**
+ * Records the options of every Pi SDK runtime the composition builds. Composition only
+ * constructs runtimes and swaps their custom tools; any other call would start the real
+ * Pi SDK, so the guard fails the test instead.
+ */
+function capturePiSdkRuntime(options: PiSdkRuntimeOptions): PiSdkRuntime {
+  piSdkRuntimeOptions.push(options);
+  return new Proxy(new PiSdkRuntime(options), {
+    get(target, property, receiver) {
+      const value: unknown = Reflect.get(target, property, receiver);
+      if (typeof value === "function" && property !== "setCustomTools") {
+        throw new Error(`bootstrap tests must not call PiSdkRuntime.${String(property)}`);
+      }
+      return value;
+    },
+  });
+}
+
+const composeAgentdServices: typeof composeServices = (config, overrides = {}) => (
+  composeServices(config, { createPiSdkRuntime: capturePiSdkRuntime, ...overrides })
+);
+
 type BeforeAgentStartHandler = (event: { systemPrompt: string }) => { systemPrompt?: string } | undefined;
 
-async function beforeAgentStartHandlerFrom(options: CapturedPiSdkRuntimeOptions): Promise<BeforeAgentStartHandler> {
+async function beforeAgentStartHandlerFrom(options: PiSdkRuntimeOptions): Promise<BeforeAgentStartHandler> {
   const extension = options.resourceLoaderOptions?.extensionFactories?.[0];
   if (!extension) throw new Error("Picky main runtime did not receive a contract extension");
 

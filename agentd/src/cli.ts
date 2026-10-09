@@ -160,7 +160,7 @@ Examples:
         return;
       }
       const { ack, replyText } = await sendCommandAndWaitForReply<ExternalEntryAck>(connection, command, {
-        matchAck: matchExternalEntryAckParsed("submitMain"),
+        matchAck: matchExternalEntryAck("submitMain"),
         afterAck: awaitTerminalAfterAck,
         matchReply: matchMainReplyForContext,
       });
@@ -230,7 +230,7 @@ async function createEmptyPickle(
     return;
   }
   const { ack, replyText } = await sendCommandAndWaitForReply<ExternalEntryAck>(connection, command, {
-    matchAck: matchExternalEntryAckParsed("createPickle"),
+    matchAck: matchExternalEntryAck("createPickle"),
     afterAck: awaitTerminalAfterAck,
     matchReply: matchPickleFinalAnswerForSession,
   });
@@ -255,7 +255,7 @@ async function createNamedPickle(
     return;
   }
   const { ack, replyText } = await sendCommandAndWaitForReply<ExternalEntryAck>(connection, command, {
-    matchAck: matchExternalEntryAckParsed("createPickle"),
+    matchAck: matchExternalEntryAck("createPickle"),
     afterAck: awaitTerminalAfterAck,
     matchReply: matchPickleFinalAnswerForSession,
   });
@@ -951,20 +951,9 @@ function fail(message: string, code: number): never {
   process.exit(code);
 }
 
-interface ExternalEntryAck {
-  commandId: string;
-  kind: string;
-  sessionId?: string;
-  contextId?: string;
-  errorMessage?: string;
-}
+type ExternalEntryAck = Extract<EventEnvelope, { type: "externalEntryAck" }>;
 
 type PushToTalkControlAction = "press" | "release";
-
-interface PushToTalkControlAck {
-  commandId: string;
-  action: PushToTalkControlAction;
-}
 
 type PickySettingsAck = Extract<EventEnvelope, { type: "pickySettingsAck" }>;
 
@@ -1015,31 +1004,21 @@ function formatPickySettingValue(value: unknown): string {
 function matchPushToTalkControlAck(action: PushToTalkControlAction): (event: EventEnvelope, commandId: string) => EventEnvelope | null {
   return (event, commandId) => {
     if (event.type !== "pushToTalkControlAck") return null;
-    const ack = event as unknown as PushToTalkControlAck;
-    if (ack.commandId !== commandId) return null;
-    if (ack.action !== action) return null;
+    if (event.commandId !== commandId) return null;
+    if (event.action !== action) return null;
     return event;
   };
 }
 
-function matchExternalEntryAck(kind: "submitMain" | "createPickle"): (event: EventEnvelope, commandId: string) => EventEnvelope | null {
+function matchExternalEntryAck(kind: "submitMain" | "createPickle"): (event: EventEnvelope, commandId: string) => ExternalEntryAck | null {
   return (event, commandId) => {
     if (event.type !== "externalEntryAck") return null;
-    const ack = event as unknown as ExternalEntryAck;
-    if (ack.commandId !== commandId) return null;
-    if (ack.kind !== kind) return null;
-    if (ack.errorMessage) {
-      throw new PickyCliServerError("external_entry_failed", ack.errorMessage, commandId);
+    if (event.commandId !== commandId) return null;
+    if (event.kind !== kind) return null;
+    if (event.errorMessage) {
+      throw new PickyCliServerError("external_entry_failed", event.errorMessage, commandId);
     }
     return event;
-  };
-}
-
-function matchExternalEntryAckParsed(kind: "submitMain" | "createPickle"): (event: EventEnvelope, commandId: string) => ExternalEntryAck | null {
-  const inner = matchExternalEntryAck(kind);
-  return (event, commandId) => {
-    const matched = inner(event, commandId);
-    return matched ? (matched as unknown as ExternalEntryAck) : null;
   };
 }
 

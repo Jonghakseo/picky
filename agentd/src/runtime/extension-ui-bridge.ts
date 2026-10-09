@@ -6,6 +6,20 @@ import type { PickyExtensionNotifyType, PickyExtensionUiRequest } from "../proto
 
 type ExtensionUiMethod = PickyExtensionUiRequest["method"];
 
+export type AskUserQuestionFunction = (request: unknown, options?: { signal?: AbortSignal }) => Promise<unknown>;
+
+/**
+ * Finds the `askUserQuestion` dialog (or its snake_case alias) that Picky layers on top
+ * of Pi's `ExtensionUIContext` in `createContext()`. Pi's type does not declare it, so
+ * tools probe the UI object at runtime and get `undefined` when another host omits it.
+ */
+export function resolveAskUserQuestion(ui: ExtensionUIContext): AskUserQuestionFunction | undefined {
+  const candidate = ("askUserQuestion" in ui ? ui.askUserQuestion : undefined)
+    ?? ("ask_user_question" in ui ? ui.ask_user_question : undefined);
+  // Only the call signature is assumed; the bridge validates the request shape.
+  return typeof candidate === "function" ? candidate as AskUserQuestionFunction : undefined;
+}
+
 /**
  * Marker base class for errors that originate from Picky's extension UI bridge
  * surface (e.g. a pi extension calling an API Picky does not implement). The

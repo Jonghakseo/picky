@@ -465,7 +465,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
     // their scoped-model picker behavior while production Pi sessions always
     // take the authoritative settings-manager path below.
     if (!services?.modelRuntime) {
-      const scopedModels = (this.runtime.session as unknown as { scopedModels?: ScopedModelOption[] }).scopedModels ?? [];
+      const scopedModels = this.runtime.session.scopedModels ?? [];
       const current = piReadModelMetadata(this.runtime.session);
       return {
         models: scopedModels.map((entry) => runtimeModelOptionFromModel(entry.model)),
@@ -485,7 +485,7 @@ export class PiSdkRuntimeSession implements RuntimeSessionHandle {
   async setExactModel(provider: string, modelId: string): Promise<RuntimeAssistantRunMetadata | undefined> {
     // A direct selection must not rewrite the current cycle scope. The picker
     // refresh has already synchronized it before the user can select a row.
-    const scopedModels = (this.runtime.session as unknown as { scopedModels?: ScopedModelOption[] }).scopedModels ?? [];
+    const scopedModels = this.runtime.session.scopedModels ?? [];
     const available = await availableModelsFromServices(this.runtime.services);
     const candidates = scopedModels.length > 0 ? scopedModels.map((entry) => entry.model) : available;
     const selected = candidates.find((model) => model.provider === provider && model.id === modelId);

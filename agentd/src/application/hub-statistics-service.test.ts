@@ -1,16 +1,10 @@
 import { createHash } from "node:crypto";
-import type * as FileSystem from "node:fs/promises";
 import { mkdir, mkdtemp, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { PickyAgentSessionSchema } from "../protocol.js";
 import { HubStatisticsService, parsePiUsageJsonl } from "./hub-statistics-service.js";
-
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const fs = await importOriginal<typeof FileSystem>();
-  return { ...fs, readFile: vi.fn(fs.readFile), unlink: vi.fn(fs.unlink) };
-});
 
 function session(id: string, revision: number, overrides: Record<string, unknown> = {}) {
   return PickyAgentSessionSchema.parse({
@@ -140,7 +134,8 @@ describe("HubStatisticsService", () => {
         parsedPaths.push(filePath);
         return await parsePiUsageJsonl(filePath);
       };
-      const service = new HubStatisticsService(root, { parsePiUsageJsonl: parser });
+      const serviceReadFile = vi.fn((path: string, encoding: "utf8") => readFile(path, encoding));
+      const service = new HubStatisticsService(root, { parsePiUsageJsonl: parser, fileSystem: { readFile: serviceReadFile, unlink } });
 
       await service.snapshot();
       expect(parseCount).toBe(65);
@@ -156,10 +151,10 @@ describe("HubStatisticsService", () => {
       }));
 
       parseCount = 0;
-      vi.mocked(readFile).mockClear();
+      serviceReadFile.mockClear();
       await service.snapshot();
       expect(parseCount).toBe(0);
-      const derivedReads = vi.mocked(readFile).mock.calls.filter(([path]) => (
+      const derivedReads = serviceReadFile.mock.calls.filter(([path]) => (
         String(path).startsWith(derivedDirectory + "/")
       ));
       // Hydration may read all 65 records, but pruning must not read them again.
@@ -270,7 +265,7 @@ describe("HubStatisticsService", () => {
 
   it.each(["ENOENT", "EACCES"])("does not fail snapshots when orphan-cache deletion returns %s", async (code) => {
     const root = await mkdtemp(join(tmpdir(), "picky-hub-usage-prune-error-"));
-    const actual = await vi.importActual<typeof FileSystem>("node:fs/promises");
+    const serviceUnlink = vi.fn((path: string) => unlink(path));
     try {
       const sessions = join(root, "sessions");
       const piFile = join(root, "pickle.jsonl");
@@ -278,22 +273,21 @@ describe("HubStatisticsService", () => {
       await writeFile(piFile, JSON.stringify(assistantEntry("answer")));
       const sessionPath = join(sessions, "pickle.json");
       await writeFile(sessionPath, JSON.stringify(session("pickle", 1, { piSessionFilePath: piFile })));
-      const service = new HubStatisticsService(root);
+      const service = new HubStatisticsService(root, { fileSystem: { readFile, unlink: serviceUnlink } });
       await service.snapshot();
       await Promise.all([rm(piFile), rm(sessionPath)]);
 
-      vi.mocked(unlink).mockClear();
-      vi.mocked(unlink).mockImplementationOnce(async (path) => {
+      serviceUnlink.mockClear();
+      serviceUnlink.mockImplementationOnce(async (path) => {
         // Model another prune winning the unlink, or an OS access failure.
-        if (code === "ENOENT") await actual.unlink(path);
+        if (code === "ENOENT") await unlink(path);
         throw Object.assign(new Error("Derived-cache deletion failed"), { code });
       });
 
       // The removed Pickle survives in the statistics history; the snapshot must still resolve.
       await expect(service.snapshot()).resolves.toMatchObject({ records: [expect.objectContaining({ id: "pickle" })] });
-      expect(unlink).toHaveBeenCalledTimes(1);
+      expect(serviceUnlink).toHaveBeenCalledTimes(1);
     } finally {
-      vi.mocked(unlink).mockReset().mockImplementation(actual.unlink);
       await rm(root, { recursive: true, force: true });
     }
   });

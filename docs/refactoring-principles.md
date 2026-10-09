@@ -288,7 +288,7 @@ Use this sequence for safe refactors:
 - Swift concurrency guide: `docs/swift-concurrency.md`
 - HUD performance playbook: `docs/perf-profiling.md`
 - SwiftLint rules: https://realm.github.io/SwiftLint/rule-directory.html
-- typescript-eslint rules: https://typescript-eslint.io/rules/
+- Oxlint rules (agentd lint, `agentd/.oxlintrc.json`): https://oxc.rs/docs/guide/usage/linter/rules
 - GitHub Actions workflow syntax: https://docs.github.com/actions/reference/workflows-and-actions/workflow-syntax
 
 #### 2026-09-06 type-group ratchet

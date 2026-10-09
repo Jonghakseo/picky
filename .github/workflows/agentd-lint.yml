@@ -41,8 +41,11 @@ jobs:
       - name: Verify UI design token baseline provenance
         run: python3 scripts/lint-ui-design-tokens.py --verify-baseline
 
-      - name: Reject unexpected ESLint suppressions
+      - name: Reject unexpected lint suppressions
         run: pnpm run check:eslint-suppressions
 
       - name: Lint agentd with zero warnings
         run: pnpm --dir agentd run lint
+
+      - name: Test vendored anti-slop lint rules
+        run: pnpm --dir agentd run test:lint-rules

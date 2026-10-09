@@ -237,7 +237,7 @@ fi
 
 run_step "agentd: typecheck" pnpm --dir agentd run typecheck
 run_step "agentd: lint (zero warnings)" pnpm --dir agentd run lint
-run_step "ESLint suppression guard" pnpm run check:eslint-suppressions
+run_step "Lint suppression guard" pnpm run check:eslint-suppressions
 # Most files run in Vitest's parallel pool. The WebSocket-heavy server and
 # session-supervisor suites have load-sensitive delivery deadlines, so test:ci
 # runs those two files in a second, serial phase.

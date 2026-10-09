@@ -68,7 +68,7 @@ export class PiExtensionCommandRunner {
 
   async run(request: PiExtensionCommandRunRequest): Promise<PiExtensionCommandRunResult> {
     const resolveRpcEntry = this.dependencies.resolveRpcEntry ?? (() => fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent/rpc-entry")));
-    const spawnRpc = this.dependencies.spawn ?? ((command, args, options) => spawn(command, args, options) as unknown as RpcChildProcess);
+    const spawnRpc = this.dependencies.spawn ?? ((command, args, options) => spawn(command, args, options));
     const child = spawnRpc(process.execPath, [
       resolveRpcEntry(),
       "--mode", "rpc",

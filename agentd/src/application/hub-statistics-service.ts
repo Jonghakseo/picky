@@ -58,6 +58,13 @@ interface PersistedPiUsageDerivedRecord {
 export interface HubStatisticsServiceOptions {
   /** Test-only parser boundary. Production uses the streamed JSONL parser below. */
   parsePiUsageJsonl?: (filePath: string) => Promise<PiUsageEntry[]>;
+  /** File reads and deletions, replaceable to observe cache reads or inject unlink failures. */
+  fileSystem?: HubStatisticsFileSystem;
+}
+
+export interface HubStatisticsFileSystem {
+  readFile(path: string, encoding: "utf8"): Promise<string>;
+  unlink(path: string): Promise<void>;
 }
 
 interface UsageSource {
@@ -93,6 +100,7 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
   private readonly historyPath: string;
   private readonly piUsageDerivedCacheDirectory: string;
   private readonly parsePiUsage: (filePath: string) => Promise<PiUsageEntry[]>;
+  private readonly fileSystem: HubStatisticsFileSystem;
   /** Insertion order is LRU order, with the oldest entry first. */
   private readonly piUsageCache = new Map<string, CachedPiSessionUsage>();
   private readonly piUsageReads = new Map<string, Promise<PiUsageEntry[]>>();
@@ -109,6 +117,7 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
     this.historyPath = join(appSupportDir, "Statistics", "history.json");
     this.piUsageDerivedCacheDirectory = join(appSupportDir, "Statistics", "pi-usage-cache", PI_USAGE_DERIVED_CACHE_VERSION);
     this.parsePiUsage = options.parsePiUsageJsonl ?? parsePiUsageJsonl;
+    this.fileSystem = options.fileSystem ?? { readFile, unlink };
   }
 
   async snapshot(): Promise<HubStatisticsSnapshot> {
@@ -129,7 +138,7 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
     this.classificationGeneration += 1;
     await this.enqueueClassificationPersistence(async () => {
       try {
-        await unlink(this.classificationsPath);
+        await this.fileSystem.unlink(this.classificationsPath);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
@@ -209,7 +218,7 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
 
   async readClassifications(): Promise<PickleClassifications> {
     try {
-      const raw: unknown = JSON.parse(await readFile(this.classificationsPath, "utf8"));
+      const raw: unknown = JSON.parse(await this.fileSystem.readFile(this.classificationsPath, "utf8"));
       if (!isClassifications(raw)) throw new Error("invalid classifications schema");
       return raw;
     } catch (error) {
@@ -276,7 +285,7 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
 
   private async readHistory(): Promise<{ history: HubStatisticsHistory; serialized?: string }> {
     try {
-      const serialized = await readFile(this.historyPath, "utf8");
+      const serialized = await this.fileSystem.readFile(this.historyPath, "utf8");
       return { history: parseHubStatisticsHistory(JSON.parse(serialized)), serialized };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -294,7 +303,7 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
       await writeFile(tempPath, serialized, "utf8");
       await rename(tempPath, this.historyPath);
     } catch (error) {
-      await unlink(tempPath).catch(() => undefined);
+      await this.fileSystem.unlink(tempPath).catch(() => undefined);
       throw error;
     }
   }
@@ -307,7 +316,7 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
 
   private async readClassificationSettings(): Promise<ClassificationSettings> {
     try {
-      const raw: unknown = JSON.parse(await readFile(this.classificationSettingsPath, "utf8"));
+      const raw: unknown = JSON.parse(await this.fileSystem.readFile(this.classificationSettingsPath, "utf8"));
       if (!isClassificationSettings(raw)) throw new Error("invalid classification settings schema");
       return raw;
     } catch (error) {
@@ -342,7 +351,7 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
 
   private async readSession(filePath: string): Promise<PickyAgentSession | undefined> {
     try {
-      return PickyAgentSessionSchema.parse(JSON.parse(await readFile(filePath, "utf8")));
+      return PickyAgentSessionSchema.parse(JSON.parse(await this.fileSystem.readFile(filePath, "utf8")));
     } catch (error) {
       logAgentd("hub statistics session skipped", { path: filePath, error: messageOf(error) });
       return undefined;
@@ -397,7 +406,7 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
   private async readMainAgentSessionPath(): Promise<string | undefined> {
     const statePath = join(this.appSupportDir, "picky.json");
     try {
-      const state = PickyMainAgentStateSchema.parse(JSON.parse(await readFile(statePath, "utf8")));
+      const state = PickyMainAgentStateSchema.parse(JSON.parse(await this.fileSystem.readFile(statePath, "utf8")));
       return state.sessionFilePath;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -464,7 +473,7 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
   private async readPiUsageDerived(filePath: string): Promise<CachedPiSessionUsage | undefined> {
     const derivedPath = this.piUsageDerivedPath(filePath);
     try {
-      const raw: unknown = JSON.parse(await readFile(derivedPath, "utf8"));
+      const raw: unknown = JSON.parse(await this.fileSystem.readFile(derivedPath, "utf8"));
       if (!isPersistedPiUsageDerivedRecord(raw) || raw.sourcePath !== filePath) {
         throw new Error("invalid Pi usage derived record");
       }
@@ -492,7 +501,7 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
     } catch (error) {
       logAgentd("hub statistics Pi usage derived record write skipped", { path: derivedPath, error: messageOf(error) });
       try {
-        await unlink(tempPath);
+        await this.fileSystem.unlink(tempPath);
       } catch (cleanupError) {
         const code = (cleanupError as NodeJS.ErrnoException).code;
         if (code !== "ENOENT" && code !== "ENOTDIR") {
@@ -507,7 +516,7 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
     // replace its record, so only the sole visible reader may remove it.
     if ((this.piUsageVisibleSources.get(filePath) ?? 0) > 1) return;
     try {
-      await unlink(this.piUsageDerivedPath(filePath));
+      await this.fileSystem.unlink(this.piUsageDerivedPath(filePath));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         logAgentd("hub statistics Pi usage derived record removal skipped", { path: filePath, error: messageOf(error) });
@@ -544,7 +553,7 @@ export class HubStatisticsService implements HubStatisticsServiceLike {
 
   private async readPiUsageDerivedRecordForPruning(derivedPath: string): Promise<PersistedPiUsageDerivedRecord | undefined> {
     try {
-      const raw: unknown = JSON.parse(await readFile(derivedPath, "utf8"));
+      const raw: unknown = JSON.parse(await this.fileSystem.readFile(derivedPath, "utf8"));
       if (!isPersistedPiUsageDerivedRecord(raw) || this.piUsageDerivedPath(raw.sourcePath) !== derivedPath) {
         throw new Error("invalid Pi usage derived record");
       }

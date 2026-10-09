@@ -1,5 +1,6 @@
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { resolveAskUserQuestion } from "./extension-ui-bridge.js";
 
 const AskUserQuestionOptionSchema = Type.Union([
   Type.String(),
@@ -50,14 +51,13 @@ export function createPickyAskUserQuestionTool(): ToolDefinition {
     ],
     parameters: AskUserQuestionParamsSchema,
     execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
-      const ui = ctx.ui as unknown as Record<string, unknown>;
-      const askUserQuestion = ui.askUserQuestion ?? ui.ask_user_question;
+      const askUserQuestion = resolveAskUserQuestion(ctx.ui);
 
-      if (!ctx.hasUI || typeof askUserQuestion !== "function") {
+      if (!ctx.hasUI || !askUserQuestion) {
         return errorResult("Error: Picky input UI is unavailable.");
       }
 
-      const result = await (askUserQuestion as (request: unknown, opts?: { signal?: AbortSignal }) => Promise<unknown>)(
+      const result = await askUserQuestion(
         {
           title: params.title,
           description: params.description,

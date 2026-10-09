@@ -62,5 +62,9 @@
   {
     "path": "agentd/src/session-supervisor.ts",
     "directive": "// eslint-disable-next-line complexity -- Steer owns one transactional flow across runtime attachment, rollback, queue journaling, and synchronous slash handling."
+  },
+  {
+    "path": "agentd/src/runtime/pi-capabilities.ts",
+    "directive": "// eslint-disable-next-line anti-slop/no-chained-type-assertions -- ModelRuntime.credentials is private in Pi's types; this documented sniff is the only way to reach reload."
   }
 ]

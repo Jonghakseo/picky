@@ -23,12 +23,12 @@ for (const [key, count] of actualCounts) {
 
 if (errors.length > 0) {
   for (const error of errors) console.error(`error: ${error}`);
-  console.error(`ESLint suppression guard failed with ${errors.length} unexpected directive(s).`);
+  console.error(`Lint suppression guard failed with ${errors.length} unexpected directive(s).`);
   process.exit(1);
 }
 
 const removedCount = [...allowedCounts.entries()].reduce((total, [key, count]) => total + Math.max(0, count - (actualCounts.get(key) ?? 0)), 0);
-console.log(`ESLint suppression guard passed (${actual.length} allowlisted, ${removedCount} removed).`);
+console.log(`Lint suppression guard passed (${actual.length} allowlisted, ${removedCount} removed).`);
 
 function collectSuppressions(sourceDir) {
   const entries = [];
@@ -37,7 +37,7 @@ function collectSuppressions(sourceDir) {
     const lines = fs.readFileSync(file, "utf8").split("\n");
     for (const line of lines) {
       const directive = line.trim();
-      if (/eslint-(?:disable|enable)(?:-next-line|-line)?\b/.test(directive)) {
+      if (/(?:es|ox)lint-(?:disable|enable)(?:-next-line|-line)?\b/.test(directive)) {
         entries.push({ path: relativePath, directive });
       }
     }

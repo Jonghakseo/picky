@@ -49,9 +49,12 @@ export class PiTextCompleter implements RuntimeTextCompleter {
   }
 }
 
-export async function lowCostAuthenticatedModelFromServices(services: AgentSessionServices) {
+export async function lowCostAuthenticatedModelFromServices(
+  services: AgentSessionServices,
+  resolveScopedModels: typeof scopedModelsFromServices = scopedModelsFromServices,
+) {
   const enabledModels = services.settingsManager?.getEnabledModels?.();
-  const scopedModels = await scopedModelsFromServices(services);
+  const scopedModels = await resolveScopedModels(services);
   // An unmatched explicit scope is still a constraint, not permission to send
   // background work to another authenticated provider.
   const candidates = enabledModels?.length

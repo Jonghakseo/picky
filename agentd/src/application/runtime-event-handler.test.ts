@@ -2,8 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { PickyAgentSession } from "../protocol.js";
 import { RuntimeEventHandler } from "./runtime-event-handler.js";
 
-const { logAgentd } = vi.hoisted(() => ({ logAgentd: vi.fn() }));
-vi.mock("../local-log.js", async (importOriginal) => ({ ...(await importOriginal<Record<string, unknown>>()), logAgentd }));
 
 function session(): PickyAgentSession {
   return {
@@ -22,11 +20,11 @@ function session(): PickyAgentSession {
 
 describe("RuntimeEventHandler", () => {
   it("logs each runtime event type dropped after a terminal status once until the next status", async () => {
-    const harness = inputHarness({ status: "cancelled" });
+    const logAgentd = vi.fn();
+    const harness = inputHarness({ status: "cancelled" }, logAgentd);
     const dropped = () => logAgentd.mock.calls
       .filter(([event]) => event === "runtime event dropped after terminal")
       .map(([, fields]) => (fields as { eventType: string }).eventType);
-    logAgentd.mockClear();
 
     for (const delta of ["late ", "assistant ", "text"]) await harness.handler.handle("pickle-1", { type: "assistant_delta", delta });
     await harness.handler.handle("pickle-1", { type: "tool", toolCallId: "late-tool", name: "bash", status: "running" });
@@ -556,7 +554,7 @@ describe("RuntimeEventHandler presentation codes", () => {
   });
 });
 
-function inputHarness(initial: Partial<PickyAgentSession> = {}) {
+function inputHarness(initial: Partial<PickyAgentSession> = {}, log?: (event: string, fields?: Record<string, unknown>) => void) {
   let current = { ...session(), ...initial };
   const patchSession = vi.fn(async (_sessionId: string, patch: Partial<PickyAgentSession>) => {
     current = { ...current, ...patch };
@@ -584,6 +582,7 @@ function inputHarness(initial: Partial<PickyAgentSession> = {}) {
     recordActivitySnapshot: async () => {},
   };
   const handler = new RuntimeEventHandler({
+    log,
     getSession: () => current,
     patchSession,
     applyAutoTitle: async (sessionId: string, name: string) => { await patchSession(sessionId, { title: name }); },

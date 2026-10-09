@@ -47,7 +47,7 @@ export { branchTranscriptFromEntries, writeFilePathFromRawArgs };
 export const PICKY_EXTERNAL_DELIVERY_PAUSE_STATE_CHANNEL = "picky.external-delivery.pause-state";
 export const PICKY_EXTERNAL_DELIVERY_PAUSE_QUERY_CHANNEL = "picky.external-delivery.pause-query";
 
-interface PiSdkRuntimeOptions {
+export interface PiSdkRuntimeOptions {
   agentDir?: string;
   asyncProviderPaths?: string[];
   asyncAdmissionDrain?: boolean | (() => boolean);

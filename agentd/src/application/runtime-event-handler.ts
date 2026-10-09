@@ -49,6 +49,8 @@ interface RuntimeEventHandlerDependencies {
   updateSubagentRuns?(sessionId: string, update: Extract<RuntimeEvent, { type: "subagent_run_update" }>["update"]): Promise<void>;
   consumeNoTurnRanSessionStateRestore?(sessionId: string): Partial<PickyAgentSession> | undefined;
   appendLog(sessionId: string, line: string): Promise<void>;
+  /** Diagnostic log sink. Defaults to agentd's stdout log. */
+  log?: typeof logAgentd;
   materializeTerminalArtifacts(sessionId: string): Promise<void>;
   /** SessionSupervisor supplies this durable terminal path; unit harnesses may exercise legacy status logic without it. */
   finalizeTerminal?(sessionId: string, event: Extract<RuntimeEvent, { type: "status" }>): Promise<void>;
@@ -120,7 +122,11 @@ export class RuntimeEventHandler {
   private readonly manualTerminalCompactionStatuses = new Map<string, "cancelled" | "failed">();
   private readonly suppressedManualTerminalCompactions = new Set<string>();
 
-  constructor(private readonly dependencies: RuntimeEventHandlerDependencies) {}
+  private readonly log: typeof logAgentd;
+
+  constructor(private readonly dependencies: RuntimeEventHandlerDependencies) {
+    this.log = dependencies.log ?? logAgentd;
+  }
 
   assertTerminalPersistenceReady(sessionId: string): void {
     if (this.failedTerminalEvents.has(sessionId)) throw new Error("Response persistence blocked; retryAsyncWorkPersistence required");
@@ -227,7 +233,7 @@ export class RuntimeEventHandler {
       await this.drainPendingThinkingFlush(sessionId);
       this.thinkingActive.set(sessionId, false);
       this.setLiveOutput(sessionId, "idle");
-      logAgentd("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });
+      this.log("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });
       return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
     }
     if (event.type === "extension_ui_cancelled") return this.applyExtensionUiCancelledEvent(sessionId, event.requestId);
@@ -342,7 +348,7 @@ export class RuntimeEventHandler {
     if (logged.has(key)) return;
     logged.add(key);
     this.loggedTerminalDrops.set(sessionId, logged);
-    logAgentd("runtime event dropped after terminal", { sessionId, eventType, status });
+    this.log("runtime event dropped after terminal", { sessionId, eventType, status });
   }
 
   /** Journals the compaction outcome once per compaction, in Picky's own voice. */
@@ -399,13 +405,13 @@ export class RuntimeEventHandler {
     // Picky owns the display name once a person set it. The decision belongs inside the commit:
     // a rename already queued on the session's write chain must not be undone by a name that
     // was read before it landed.
-    logAgentd("session info name", { sessionId, name: trimmed });
+    this.log("session info name", { sessionId, name: trimmed });
     await this.dependencies.applyAutoTitle(sessionId, trimmed);
   }
 
   // eslint-disable-next-line complexity -- Status transitions intentionally stay with their single session-state owner to preserve terminal and compaction invariants.
   private async applyStatusEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "status" }>): Promise<void> {
-    logAgentd("session status", { sessionId, status: event.status, summaryChars: event.summary?.length });
+    this.log("session status", { sessionId, status: event.status, summaryChars: event.summary?.length });
     const terminal = ["completed", "failed", "cancelled"].includes(event.status);
     // Prefer the final assistant message carried by the runtime event (Pi turn_end/agent_end)
     // over the streamed assistant_delta accumulator, which would otherwise concatenate every
@@ -426,15 +432,15 @@ export class RuntimeEventHandler {
       && ((event.compactionReason === "manual" && (event.compactionStarted || event.compactionCompleted || event.compactionFailed || (event.noTurnRan && terminal)))
         || isReasonlessManualCompactionFailure);
     if (this.suppressedManualTerminalCompactions.has(sessionId) && (event.compactionReason === "manual" || isReasonlessManualCompactionFailure)) {
-      logAgentd("manual compaction status ignored after abort", { sessionId, status: event.status });
+      this.log("manual compaction status ignored after abort", { sessionId, status: event.status });
       return;
     }
     if (manualTerminalCompactionStatus !== undefined && !isManualTerminalCompactionEvent) {
-      logAgentd("non-manual status ignored while terminal manual compaction is active", { sessionId, status: event.status, compactionReason: event.compactionReason });
+      this.log("non-manual status ignored while terminal manual compaction is active", { sessionId, status: event.status, compactionReason: event.compactionReason });
       return;
     }
     if (this.isIgnoredTransientBusyStatus(sessionId, event)) {
-      logAgentd("session transient busy status ignored", { sessionId, summary: event.summary });
+      this.log("session transient busy status ignored", { sessionId, summary: event.summary });
       await this.dependencies.appendLog(sessionId, `runtime busy ignored: ${event.summary ?? "Agent is already processing"}`);
       return;
     }
@@ -627,7 +633,7 @@ export class RuntimeEventHandler {
         const current = this.pendingThinkingFlushes.get(sessionId);
         if (current) current.timer = undefined;
         void this.flushPendingThinking(sessionId).catch((error) => {
-          logAgentd("thinking delta flush failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
+          this.log("thinking delta flush failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
         });
       }, THINKING_DELTA_FLUSH_INTERVAL_MS);
       pending.timer.unref?.();
@@ -757,7 +763,7 @@ export class RuntimeEventHandler {
     // The runtime chain in session-supervisor serializes events so this should not happen, but
     // keep the guard for resumed sessions or other replay paths.
     if (event.status === "running" && previous && (previous.status === "succeeded" || previous.status === "failed")) {
-      logAgentd("tool activity (late running ignored)", { sessionId, tool: event.name, previousStatus: previous.status });
+      this.log("tool activity (late running ignored)", { sessionId, tool: event.name, previousStatus: previous.status });
       return;
     }
     const tools = session.tools.filter((tool) => tool.toolCallId !== event.toolCallId);
@@ -778,7 +784,7 @@ export class RuntimeEventHandler {
       endedAt: event.status === "running" ? previous?.endedAt : new Date().toISOString(),
     };
     tools.push(nextTool);
-    logAgentd("tool activity", { sessionId, tool: event.name, status: event.status, previewChars: event.preview?.length });
+    this.log("tool activity", { sessionId, tool: event.name, status: event.status, previewChars: event.preview?.length });
     await this.dependencies.patchSession(sessionId, { tools }, { emitSession: false });
     this.dependencies.emitToolActivityUpdated(sessionId, nextTool);
     if (event.status === "succeeded" && event.imagePath) {

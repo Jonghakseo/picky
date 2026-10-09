@@ -1,0 +1,10 @@
+#!/bin/sh
+# Repository-only developer entry point. Never installed onto the product runtime PATH.
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+LOADER="$ROOT/agentd/node_modules/tsx/dist/loader.mjs"
+if [ ! -f "$LOADER" ]; then
+  printf '%s\n' 'Missing development dependencies. Run: pnpm --dir agentd install' >&2
+  exit 2
+fi
+exec node --import "$LOADER" "$ROOT/agentd/src/debug-cli.ts" "$@"

@@ -217,6 +217,12 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private var remoteAccessController: PickyRemoteAccessController?
     private lazy var remoteDictationTranscriber = PickyRemoteDictationTranscriber()
     private lazy var remoteMainAgentAdapter = PickyRemoteMainAgentAdapter(companion: companionManager)
+    /// Bounded, redacted `picky-debug` trace buffer. Always on: it records
+    /// metadata about ordinary keyboard/voice input too, not just injected
+    /// debug commands.
+    private var debugTraceRecorder: PickyDebugTraceRecorder?
+    /// Stable per-launch identity reported in the debug snapshot.
+    private let debugInstanceID = UUID().uuidString
 
     override init() {
         self.appActivationRouter = PickyAppActivationRouter()
@@ -359,6 +365,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         wireExternalEntryProvider(on: hudAgentClientRouter)
         wirePushToTalkControlHandler(on: hudAgentClientRouter)
         wirePickySettingsControlHandler(on: hudAgentClientRouter)
+        wireDebugControl(on: hudAgentClientRouter)
         // Wire the appearance store and shared settings store into singletons that live
         // outside the SwiftUI tree (markdown report viewer / tool history viewer) so every
         // secondary NSPanel flips with the rest of the app and the user's per-panel zoom
@@ -580,6 +587,120 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         router.pickySettingsControlHandler = { request in
             try await handler.handle(request)
         }
+    }
+
+    /// Wires the `picky-debug` channel: the always-on interaction trace and the
+    /// app-action handler the daemon forwards CLI requests to.
+    ///
+    /// Attaching the trace observer here is what makes ordinary input visible to
+    /// `picky-debug`: main-agent keyboard, Quick Input, and push-to-talk turns
+    /// run through the same interaction coordinator, so injected input needs no
+    /// separate instrumentation. The one production input that skips the
+    /// coordinator is Quick Input sent to an armed Pickle, which goes straight
+    /// out as a steer/follow-up command; only the daemon side of that turn is
+    /// traced.
+    private func wireDebugControl(on router: PickyAgentClientRouter) {
+        // Publishing is awaited inside the recorder's single drain task, so a
+        // stalled socket holds one in-flight batch instead of one task per
+        // recorded transition.
+        let recorder = PickyDebugTraceRecorder { [weak router] records in
+            guard let router else { return false }
+            return await router.debugChannel.publish(records)
+        }
+        debugTraceRecorder = recorder
+        companionManager.interactionCoordinator.onEventTraced = { [weak recorder] sample in
+            recorder?.recordInteraction(sample)
+        }
+
+        let handler = PickyDebugControlHandler(
+            dependencies: PickyDebugControlHandler.Dependencies(
+                snapshot: { [weak self] in
+                    self?.makeDebugAppSnapshot() ?? PickyDebugAppSnapshot.unavailable
+                },
+                busyReason: { [weak self] action in self?.debugBusyReason(for: action) },
+                submitText: { [weak self] text, inputID in
+                    guard let self else { return false }
+                    return await self.companionManager.sendDirectMessage(text, inputID: inputID)
+                },
+                controlPushToTalk: { [weak self] action in
+                    self?.companionManager.controlPushToTalkFromExternal(action: action)
+                },
+                isPushToTalkHeld: { [weak self] in self?.companionManager.isPushToTalkShortcutHeld ?? false },
+                activeVoiceInputID: { [weak self] in self?.companionManager.interactionVoiceInputID }
+            ),
+            recorder: recorder
+        )
+        router.debugChannel.appRequestHandler = { request in
+            try await handler.handle(request)
+        }
+    }
+
+    /// Refuses a debug action that would collide with live human input. Voice
+    /// capture and a debug text injection share one submission lane, so letting
+    /// both run would change what the user is actually testing.
+    private func debugBusyReason(for action: PickyDebugAppAction) -> String? {
+        let companion = companionManager
+        switch action {
+        case .snapshot:
+            return nil
+        case .text:
+            if companion.isPushToTalkShortcutHeld { return "push-to-talk is held" }
+            if companion.buddyDictationManager.isDictationInProgress { return "dictation is running" }
+            if companion.isSendingDirectMessage { return "another message is being sent" }
+            return nil
+        case .pttPress:
+            if companion.buddyDictationManager.isDictationInProgress { return "dictation is running" }
+            if companion.isSendingDirectMessage { return "a message is being sent" }
+            return nil
+        case .pttRelease:
+            return nil
+        }
+    }
+
+    private func makeDebugAppSnapshot() -> PickyDebugAppSnapshot {
+        let companion = companionManager
+        let state = companion.interactionCoordinator.projection.state
+        let dictation = companion.buddyDictationManager
+        let permissions = companion.permissions
+        let recorder = debugTraceRecorder
+        return PickyDebugAppSnapshot(
+            instanceId: debugInstanceID,
+            capturedAt: Date(),
+            monotonicMs: PickyDebugTraceClock.monotonicMs(),
+            inputPhase: state.input.debugLabel,
+            outputPhase: state.output.debugLabel,
+            overlayPhase: state.overlay.debugLabel,
+            interactionSequence: companion.interactionProjectionSequence,
+            pendingTextInputCount: state.pendingTextInputs.count,
+            pendingVoiceInputCount: state.pendingVoiceInputs.count,
+            trackedContextCount: state.contextOwnership.count,
+            queuedSpeechCount: state.queuedSpeechReplies.count,
+            activeInputId: state.debugActiveInputID?.uuidString,
+            activeContextId: state.debugActiveContextID,
+            activeSpeechId: state.debugActiveSpeechID?.uuidString,
+            armedSessionId: companion.selectionStore.screenContextTargetSessionID,
+            selectedSessionId: companion.selectionStore.selectedSessionID,
+            voiceState: companion.voiceState.debugLabel,
+            voicePhase: companion.voiceInteractionState.phase.debugLabel,
+            pushToTalkHeld: companion.isPushToTalkShortcutHeld,
+            dictationInProgress: dictation.isDictationInProgress,
+            dictationFinalizing: dictation.isFinalizingTranscript,
+            transcriptionProviderConfigured: dictation.isTranscriptionProviderConfigured,
+            ttsPlaybackEnabled: companion.ttsPlaybackEnabled,
+            daemonChannelAvailable: true,
+            accessibilityGranted: permissions.hasAccessibility,
+            screenRecordingGranted: permissions.hasScreenRecording,
+            microphoneGranted: permissions.hasMicrophone,
+            screenContentGranted: permissions.hasScreenContent,
+            sendingDirectMessage: companion.isSendingDirectMessage,
+            waitingForCursorResponse: companion.isWaitingForCursorResponse,
+            quickInputPanelVisible: companion.isQuickInputPanelVisible,
+            tracePendingCount: recorder?.pendingCount ?? 0,
+            tracePendingCapacity: recorder?.pendingCapacity ?? 0,
+            traceRecordedCount: recorder?.recordedCount ?? 0,
+            traceDroppedCount: recorder?.droppedCount ?? 0,
+            traceTransportFailureCount: recorder?.transportFailureCount ?? 0
+        )
     }
 
     private func wireDockGroupsProvider(on router: PickyAgentClientRouter) {

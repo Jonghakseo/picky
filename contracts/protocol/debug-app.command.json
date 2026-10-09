@@ -1,0 +1,7 @@
+{
+  "protocolVersion": "2026-08-25",
+  "id": "cmd-debug-text",
+  "type": "debugApp",
+  "action": "text",
+  "text": "fixture"
+}

@@ -1,0 +1,12 @@
+{
+  "protocolVersion": "2026-08-25",
+  "id": "cmd-debug-complete",
+  "type": "completeDebugApp",
+  "requestId": "debug-request-7",
+  "result": {
+    "schemaVersion": 1,
+    "accepted": true,
+    "inputId": "00000000-0000-0000-0000-000000000007",
+    "completesTurn": false
+  }
+}

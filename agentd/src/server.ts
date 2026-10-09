@@ -32,6 +32,9 @@ import type { RuntimeAutoRetry } from "./runtime/types.js";
 import { readNewPickleRuntimeDefaults } from "./application/new-pickle-runtime-defaults.js";
 import { SettingsControlBroker, SettingsControlError } from "./features/settings/settings-control-broker.js";
 import { settingsCommandHandlers } from "./features/settings/handlers.js";
+import { DebugControlBroker, DebugControlError } from "./features/debug/debug-control-broker.js";
+import { debugCommandHandlers } from "./features/debug/handlers.js";
+import { debugInputModality, recordDaemonTrace, sharedDebugTraceRing } from "./domain/debug-trace-ring.js";
 import { packageCommandHandlers } from "./features/package/handlers.js";
 import { piOAuthCommandHandlers } from "./features/pi-oauth/handlers.js";
 import { hubCommandHandlers } from "./features/hub/handlers.js";
@@ -101,6 +104,9 @@ export class AgentdServer {
   private pendingPushToTalkControls = new Map<string, PushToTalkControlPending>();
   private pendingDockGroupsRequests = new Map<string, DockGroupsPending>();
   private readonly settingsControl: SettingsControlBroker;
+  private readonly debugControl: DebugControlBroker;
+  /** Process-wide so instrumentation deep in the main-agent path can record without a socket. */
+  private readonly debugTraceRing = sharedDebugTraceRing();
   private readonly hubStatistics: HubStatisticsBroker;
   private readonly packageOperations: PackageOperations;
   private readonly mcpServers: McpServerAdmin;
@@ -134,6 +140,10 @@ export class AgentdServer {
     });
     this.settingsControl = new SettingsControlBroker({
       firstSettingsControlApp: () => this.firstClientWithCapability("settingsControl"),
+      send: (ws, event) => { this.send(ws, event); },
+    });
+    this.debugControl = new DebugControlBroker({
+      firstDebugControlApp: () => this.firstClientWithCapability("debugControl"),
       send: (ws, event) => { this.send(ws, event); },
     });
     this.pickleBridgeRequests = new PickleBridgeRequestCoordinator({
@@ -257,6 +267,7 @@ export class AgentdServer {
     }
     this.pendingDockGroupsRequests.clear();
     this.settingsControl.rejectAll();
+    this.debugControl.rejectAll();
     for (const client of this.clients) client.close();
     await this.packageOperations.stop();
     this.hubStatistics.abandonPendingConfiguration();
@@ -346,6 +357,7 @@ export class AgentdServer {
         }
       }
       this.settingsControl.rejectForApp(ws);
+      this.debugControl.rejectForApp(ws);
       const cancelledOAuthLogins = this.options.piOAuth?.cancelOwnedBy(ws) ?? 0;
       logAgentd("ws disconnected", { clients: this.clients.size, cancelledOAuthLogins });
     });
@@ -377,6 +389,12 @@ export class AgentdServer {
       assertProtocolVersion(parsed, PROTOCOL_VERSION);
       const command = parseCommand(parsed);
       logAgentd("command received", commandLogFields(command));
+      if (command.type === "followUp" || command.type === "steer") {
+        recordDaemonTrace("pickle.input.received", {
+          commandId: command.id, sessionId: command.sessionId, event: command.type, textLength: command.text.length,
+          ...(command.context ? { contextId: command.context.id, modality: debugInputModality(command.context.source) } : {}),
+        });
+      }
       await this.dispatchCommand(ws, command);
       this.send(ws, { type: "ack", commandId: command.id });
     } catch (error) {
@@ -384,7 +402,7 @@ export class AgentdServer {
       logAgentd("command failed", { commandId, error: error instanceof Error ? error.message : String(error) });
       this.send(ws, {
         type: "error",
-        code: error instanceof SettingsControlError || error instanceof PiModelScopeConflictError || error instanceof ControlFailure || error instanceof SessionQueueCommandError || error instanceof SessionInputUnavailableError ? error.code : "bad_message",
+        code: error instanceof SettingsControlError || error instanceof DebugControlError || error instanceof PiModelScopeConflictError || error instanceof ControlFailure || error instanceof SessionQueueCommandError || error instanceof SessionInputUnavailableError ? error.code : "bad_message",
         message: error instanceof Error ? error.message : String(error),
         commandId,
       });
@@ -518,6 +536,13 @@ export class AgentdServer {
       completePickleHandoff: (cmd) => this.completePendingPickleHandoff(cmd),
       registerAppCapabilities: (cmd) => this.registerAppCapabilities(ws, cmd.capabilities, cmd.id, cmd.profile),
       ...settingsCommandHandlers({ socket: ws, settingsControl: this.settingsControl, send: (socket, event) => { this.send(socket, event); } }),
+      ...debugCommandHandlers({
+        socket: ws,
+        debugControl: this.debugControl,
+        traceRing: this.debugTraceRing,
+        hasCapability: (socket, capability) => this.appCapabilities.get(socket)?.has(capability) === true,
+        send: (socket, event) => { this.send(socket, event); },
+      }),
       completePickleBridgeRequest: (cmd) => this.completePendingPickleBridgeRequest(cmd),
       submitMainFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "submitMain", { text: cmd.text, captureContext: cmd.captureContext, cwd: cmd.cwd }),
       createPickleFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "createPickle", { title: cmd.title, instructions: cmd.instructions, captureContext: cmd.captureContext, cwd: cmd.cwd, group: cmd.group }),
@@ -1174,6 +1199,15 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, key: command.key, toggle: command.toggle ? 1 : 0, displayId: command.displayId, caller: command.caller };
     case "completePickySettingsRequest":
       return { commandId: command.id, type: command.type, requestId: command.requestId, errorCode: command.errorCode, errorChars: command.errorMessage?.length };
+    // Debug commands log shape only: the injected text itself never reaches the log.
+    case "debugApp":
+      return { commandId: command.id, type: command.type, action: command.action, textChars: command.text?.length };
+    case "completeDebugApp":
+      return { commandId: command.id, type: command.type, requestId: command.requestId, errorCode: command.errorCode, errorChars: command.errorMessage?.length };
+    case "publishDebugTrace":
+      return { commandId: command.id, type: command.type, records: command.records.length };
+    case "readDebugTrace":
+      return { commandId: command.id, type: command.type, afterSequence: command.afterSequence, limit: command.limit };
     case "whoami": case "validateCliCaller":
       return { commandId: command.id, type: command.type, sessionId: command.callerContext.sessionId };
     case "renamePickle": case "renameSession": case "renameStoredPickle":
@@ -1388,6 +1422,9 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
     case "dockGroupsSnapshot":
       return { eventId: event.id, type: event.type, groups: event.groups.length };
     case "pickySettingsRequested": return { eventId: event.id, type: event.type, requestId: event.requestId, action: event.action, key: event.key, caller: event.caller };
+    case "debugAppRequested": return { eventId: event.id, type: event.type, requestId: event.requestId, commandId: event.commandId, action: event.action, textChars: event.text?.length };
+    case "debugAppResult": return { eventId: event.id, type: event.type, commandId: event.commandId, requestId: event.requestId, resultKeys: Object.keys(event.result).length };
+    case "debugTrace": return { eventId: event.id, type: event.type, commandId: event.commandId, instanceId: event.instanceId, records: event.records.length, nextSequence: event.nextSequence, truncated: event.truncated ? 1 : 0 };
     case "pushToTalkControlRequested":
       return { eventId: event.id, type: event.type, requestId: event.requestId, action: event.action };
     case "pushToTalkControlAck":

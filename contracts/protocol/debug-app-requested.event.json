@@ -1,0 +1,10 @@
+{
+  "protocolVersion": "2026-08-25",
+  "id": "event-debug-request",
+  "type": "debugAppRequested",
+  "timestamp": "2026-10-09T05:00:00.000Z",
+  "requestId": "debug-request-7",
+  "commandId": "cmd-debug-text",
+  "action": "text",
+  "text": "fixture"
+}

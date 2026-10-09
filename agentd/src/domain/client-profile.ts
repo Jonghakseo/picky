@@ -29,6 +29,7 @@ export const DESKTOP_BRIDGE_CAPABILITIES: readonly string[] = [
   "externalEntry",
   "pushToTalkControl",
   "settingsControl",
+  "debugControl",
 ];
 
 /**

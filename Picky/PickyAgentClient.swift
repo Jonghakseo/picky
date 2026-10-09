@@ -627,6 +627,9 @@ private extension PickyEventEnvelope {
             return "type=pushToTalkControlRequested id=\(id) request=\(request.requestId) action=\(request.action.rawValue)"
         case .pickySettingsRequested(let request):
             return "type=pickySettingsRequested id=\(id) request=\(request.requestId) action=\(request.action.rawValue) key=\(request.key ?? "none")"
+        case .debugAppRequested(let request):
+            // Never log the injected text itself; its length is enough to debug routing.
+            return "type=debugAppRequested id=\(id) request=\(request.requestId) command=\(request.commandId) action=\(request.action.rawValue) textChars=\(request.text?.count ?? 0)"
         case .slashCommandsSnapshot(let sessionId, let requestId, let commands):
             return "type=slashCommandsSnapshot id=\(id) session=\(sessionId) request=\(requestId ?? "none") commands=\(commands.count)"
         case .autocompleteCapabilitiesSnapshot(let snapshot):

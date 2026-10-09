@@ -1111,7 +1111,7 @@ export class SessionSupervisor extends EventEmitter {
       handle,
       text.length,
       prompt.imagePaths.length,
-      context?.source,
+      context,
     );
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length, visualDsl: visualDslLease ? 1 : 0 });
     await this.appendLog(sessionId, `${FOLLOWUP_PREFIX}${text}`);

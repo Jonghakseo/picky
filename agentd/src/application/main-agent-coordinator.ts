@@ -16,6 +16,7 @@ import { cleanFinalAnswer } from "../domain/session-summary.js";
 import { piSessionFilePathFromLogLine } from "../domain/pi-session-files.js";
 import { buildMainAgentRolloverSummary, MAIN_AGENT_COMPACT_IDLE_MS, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_RESTART_TEARDOWN_SESSION_BYTES, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, mainRolloverReason, normalizeMainAgentState, quickReplyOriginFromContextSource, RETIRED_PICKLE_CLI_CAPABILITIES, type QuickReplyMetadata } from "../domain/main-agent-policy.js";
 import { logAgentd } from "../local-log.js";
+import { debugInputModality, recordDaemonTrace } from "../domain/debug-trace-ring.js";
 
 export interface MainAgentCoordinatorDependencies {
   options: SessionSupervisorOptions;
@@ -234,6 +235,12 @@ export class MainAgentCoordinator {
   }
 
   private emitQuickReply(contextId: string, text: string, metadata: Partial<QuickReplyMetadata> = {}): void {
+    recordDaemonTrace("main.reply.emitted", {
+      contextId,
+      ...(contextId === this.mainReplyContextId && this.activeMainRuntimeInputId ? { inputId: this.activeMainRuntimeInputId } : {}),
+      textLength: text.length,
+      outcome: "emitted",
+    });
     this.deps.emit("quickReply", contextId, text, metadata);
   }
 
@@ -601,14 +608,21 @@ export class MainAgentCoordinator {
     }
   }
 
-  async routeThroughMainAgent(context: PickyContextPacket): Promise<void> {
+  async routeThroughMainAgent(context: PickyContextPacket, traceEvent: "main.input.accepted" | "main.input.resumed" = "main.input.accepted"): Promise<void> {
     logAgentd("main route requested", { contextId: context.id, source: context.source, transcriptChars: context.transcript?.length });
+    recordDaemonTrace(traceEvent, {
+      contextId: context.id,
+      event: context.source,
+      modality: debugInputModality(context.source),
+      ...(context.transcript === undefined ? {} : { textLength: context.transcript.length }),
+    });
     // Fresh activity cancels any pending idle compaction; input during an in-flight compaction is
     // buffered and delivered once it settles (drainMainPendingInput) instead of interrupting it.
     this.cancelMainIdleCompaction();
     if (this.mainInFlightCompaction || this.mainHandle?.isCompacting === true) {
       this.mainPendingCompactionContexts.push(context);
       logAgentd("main input buffered during compaction", { contextId: context.id, queued: this.mainPendingCompactionContexts.length });
+      recordDaemonTrace("main.input.buffered", { contextId: context.id, outcome: "compacting", state: "buffered" });
       return;
     }
     const interactionGeneration = this.mainInteractionGeneration;
@@ -708,7 +722,7 @@ export class MainAgentCoordinator {
     const next = this.mainPendingCompactionContexts.shift();
     if (!next) return;
     logAgentd("main buffered input drained", { contextId: next.id, remaining: this.mainPendingCompactionContexts.length });
-    void this.routeThroughMainAgent(next).catch((error) => {
+    void this.routeThroughMainAgent(next, "main.input.resumed").catch((error) => {
       logAgentd("main buffered input route failed", { contextId: next.id, error: error instanceof Error ? error.message : String(error) });
     });
   }
@@ -756,6 +770,11 @@ export class MainAgentCoordinator {
     this.recordMainPromptDelivery();
     if (this.mainIsProcessing && handle.interrupt) {
       logAgentd("main interrupt", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, inputId: this.activeMainRuntimeInputId });
+      recordDaemonTrace("main.prompt.interruptRequested", {
+        ...(this.mainReplyContextId ? { contextId: this.mainReplyContextId } : {}),
+        ...(this.activeMainRuntimeInputId ? { inputId: this.activeMainRuntimeInputId } : {}),
+        outcome: "interruptRequested",
+      });
       if (this.activeMainRuntimeInputId) this.interruptedMainInputIds.add(this.activeMainRuntimeInputId);
       this.mainTerminalProcessed = false;
       this.mainDraft = "";
@@ -772,12 +791,23 @@ export class MainAgentCoordinator {
   private recordMainPromptDelivery(): void {
     this.mainPromptDeliveredAt = Date.now();
     logAgentd("main prompt delivered", { contextId: this.mainReplyContextId, turnId: this.mainTurnId });
+    recordDaemonTrace("main.prompt.delivered", {
+      ...(this.mainReplyContextId ? { contextId: this.mainReplyContextId } : {}),
+      ...(this.activeMainRuntimeInputId ? { inputId: this.activeMainRuntimeInputId } : {}),
+    });
   }
 
   private beginMainTurn(contextId: string, overlayContext: MainTurnOverlayContext): void {
+    if (this.mainIsProcessing && this.mainReplyContextId && this.activeMainRuntimeInputId) {
+      recordDaemonTrace("main.turn.superseded", {
+        contextId: this.mainReplyContextId, inputId: this.activeMainRuntimeInputId,
+        target: `main-turn-${this.mainTurnId + 1}`, outcome: "contextReplaced",
+      });
+    }
     this.mainTurnId += 1;
     this.mainVisualNarrationTurnToken = `main-turn-${this.mainTurnId}`;
     this.mainVisualNarration.beginTurn();
+    recordDaemonTrace("main.turn.started", { contextId, inputId: `main-turn-${this.mainTurnId}`, previousState: this.mainIsProcessing ? "turnActive" : "idle", state: "turnActive" });
     this.mainReplyContextId = contextId;
     this.mainTurnOverlayContext = overlayContext;
     this.mainPromptDeliveredAt = undefined;
@@ -1008,6 +1038,10 @@ export class MainAgentCoordinator {
           turnId: this.mainTurnId,
           msSincePrompt,
         });
+        recordDaemonTrace("main.response.firstDelta", {
+          ...(this.mainReplyContextId ? { contextId: this.mainReplyContextId } : {}),
+          ...(this.activeMainRuntimeInputId ? { inputId: this.activeMainRuntimeInputId } : {}),
+        });
         this.mainFirstAssistantDeltaLogged = true;
       }
       this.mainAssistantDeltaSeen = true;
@@ -1067,6 +1101,12 @@ export class MainAgentCoordinator {
         // `agent_end` that follows `turn_end`). The first one wins.
         if (this.mainTerminalProcessed) return;
         this.mainTerminalProcessed = true;
+        recordDaemonTrace("main.turn.settled", {
+          ...(this.mainReplyContextId ? { contextId: this.mainReplyContextId } : {}),
+          ...(this.activeMainRuntimeInputId ? { inputId: this.activeMainRuntimeInputId } : {}),
+          outcome: event.status,
+          state: "idle",
+        });
         this.clearMainActivity();
         // Guard B: snapshot and clear `mainDraft` synchronously before any await,
         // so a racing terminal event that slipped past Guard A (e.g. via a custom

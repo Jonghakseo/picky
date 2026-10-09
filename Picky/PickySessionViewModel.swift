@@ -1803,7 +1803,7 @@ final class PickySessionListViewModel: ObservableObject {
              .mainAgentSessionInfoUpdated, .mainAgentModelsSnapshot, .mainTasksUpdated, .mainTaskModelPresets,
              .piOAuthStatus, .piOAuthUrlRequested, .piOAuthPromptRequested, .piAuthenticationReloaded,
              .pointerOverlayRequested, .annotationOverlayRequested, .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested,
-             .dockGroupsRequested, .pushToTalkControlRequested, .pickySettingsRequested, .hello,
+             .dockGroupsRequested, .pushToTalkControlRequested, .pickySettingsRequested, .debugAppRequested, .hello,
              .hubStatisticsResult, .usageLimitsResult, .packageUpdatesAvailable, .packageConflicts, .packageOperationProgress, .packageOperationCompleted, .mcpServerList, .mcpServerOperationCompleted, .ack, .unknown,
              // A rename reply is correlated and consumed at the router
              // boundary; the card itself updates from the projection.

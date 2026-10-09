@@ -285,6 +285,10 @@ const EXTERNAL_ONLY_PROTOCOL_EVENTS = new Set([
   "pickySettingsAck",
   "pushToTalkControlAck",
   "sessionGitSummaryResult",
+  // `picky-debug` replies: the daemon answers the CLI socket that asked. The app
+  // sends debug commands and app-side trace records, and never decodes these.
+  "debugAppResult",
+  "debugTrace",
 ]);
 
 // Reads the `type: z.literal("...")` discriminators of a `const <name> = [ ... ]`

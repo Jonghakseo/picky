@@ -10,6 +10,7 @@ import { piOAuthCommandSchemas, piOAuthEventSchemas } from "./features/pi-oauth/
 import { hubCommandSchemas, hubEventSchemas } from "./features/hub/schema.js";
 import { usageLimitsCommandSchemas, usageLimitsEventSchemas } from "./features/usage-limits/schema.js";
 import { mainTasksCommandSchemas, mainTasksEventSchemas } from "./features/main-tasks/schema.js";
+import { debugCommandSchemas, debugEventSchemas, refineDebugCommand } from "./features/debug/schema.js";
 
 // The envelope primitives live in `protocol-base.ts` so feature slices can
 // extend them without importing this module back (see features/slice-contract.ts).
@@ -697,6 +698,8 @@ export const PickyAppCapabilitySchema = z.enum([
   "externalEntry",
   "pushToTalkControl",
   "settingsControl",
+  // The app answers `debugAppRequested` and publishes app-side trace records.
+  "debugControl",
   // Accepted but not emitted by Picky until the atomic v2 protocol cutover.
   "sessionProjectionV2",
 ]);
@@ -868,7 +871,9 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   ...hubCommandSchemas,
   ...usageLimitsCommandSchemas,
   ...mainTasksCommandSchemas,
+  ...debugCommandSchemas,
 ]).superRefine((command, context) => {
+  refineDebugCommand(command, context);
   if (command.type === "getSessionProjectionSnapshot" && command.id !== command.requestId) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -1089,6 +1094,7 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("dockGroupsRequested"), requestId: z.string().min(1) }),
   EventBaseSchema.extend({ type: z.literal("dockGroupsSnapshot"), groups: z.array(DockGroupSchema) }),
   ...settingsEventSchemas,
+  ...debugEventSchemas,
   EventBaseSchema.extend({
     type: z.literal("pushToTalkControlRequested"),
     requestId: z.string().min(1),

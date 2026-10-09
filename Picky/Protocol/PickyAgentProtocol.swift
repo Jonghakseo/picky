@@ -133,6 +133,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
     /// CLI caller identity forwarded to the owning daemon for `validateCliCaller`
     /// and for a `--self` rename. The app never derives identity from it.
     var callerContext: PickyCliCallerContext?
+    /// `publishDebugTrace` payload. Redacted metadata only; see PickyDebugProtocol.swift.
+    var records: [PickyDebugTraceRecord]?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -209,7 +211,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
         classificationEnabled: Bool? = nil,
         configJson: String? = nil,
         pickyScope: PickyMcpScope? = nil,
-        callerContext: PickyCliCallerContext? = nil
+        callerContext: PickyCliCallerContext? = nil,
+        records: [PickyDebugTraceRecord]? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -287,6 +290,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.configJson = configJson
         self.pickyScope = pickyScope
         self.callerContext = callerContext
+        self.records = records
     }
 }
 
@@ -411,6 +415,11 @@ enum PickyCommandType: String, Codable, Equatable {
     case getHubStatistics, resetHubStatistics, configureHubStatistics, getUsageLimits
     case controlMainTask, resolveMainDelegation
     case setMainTaskModelPresets, getMainTaskModelPresets
+    /// `picky-debug` channel. `completeDebugApp` and `publishDebugTrace` are the
+    /// only two the app sends; `debugApp` and `readDebugTrace` are CLI-originated
+    /// and listed so shared protocol fixtures and logs decode on both ends.
+    case debugApp, readDebugTrace
+    case completeDebugApp, publishDebugTrace
 }
 
 struct PickyEventEnvelope: Decodable, Equatable {
@@ -485,6 +494,9 @@ enum PickyEvent: Equatable {
     case dockGroupsRequested(requestId: String)
     case pushToTalkControlRequested(PickyPushToTalkControlRequest)
     case pickySettingsRequested(PickySettingsRequest)
+    /// `picky-debug` asked the app to take a snapshot or inject an input. The
+    /// `debugAppResult` / `debugTrace` replies go to the CLI socket, not here.
+    case debugAppRequested(PickyDebugAppRequest)
     case slashCommandsSnapshot(sessionId: String, requestId: String?, commands: [PickySlashCommand])
     case autocompleteCapabilitiesSnapshot(PickyAutocompleteCapabilitiesSnapshot)
     case autocompleteSuggestionsSnapshot(PickyAutocompleteSuggestionsSnapshot)
@@ -665,6 +677,8 @@ enum PickyEvent: Equatable {
             return .pushToTalkControlRequested(try PickyPushToTalkControlRequest(from: decoder))
         case "pickySettingsRequested":
             return .pickySettingsRequested(try PickySettingsRequest(from: decoder))
+        case "debugAppRequested":
+            return .debugAppRequested(try PickyDebugAppRequest(from: decoder))
         default: return nil
         }
     }

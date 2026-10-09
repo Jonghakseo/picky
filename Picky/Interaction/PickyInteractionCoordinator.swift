@@ -30,6 +30,12 @@ final class PickyInteractionCoordinator {
     private(set) var projection: PickyInteractionProjection
     var onProjectionPublished: ((UInt64, PickyInteractionProjection) -> Void)?
     var onStaleProjectionDropped: ((UInt64, UInt64) -> Void)?
+    /// Metadata-only observer for the `picky-debug` trace. It receives one
+    /// sample per dispatched event, including events whose projection was
+    /// dropped as stale. Redaction happens in `PickyInteractionTraceMapper`;
+    /// nothing here is published without passing through it. Left nil (and
+    /// therefore free) when no debug consumer is wired.
+    var onEventTraced: ((PickyInteractionTraceSample) -> Void)?
 
     init(
         runtime: any PickyInteractionRuntimeProtocol = PickyInteractionRuntime(),
@@ -67,14 +73,17 @@ final class PickyInteractionCoordinator {
             while !eventQueue.isEmpty {
                 let next = eventQueue.removeFirst()
                 let envelope = envelopeMaker.makeEnvelope(event: next.event, correlation: next.correlation)
+                let tracedPreviousState = onEventTraced == nil ? nil : projection.state
                 let result = await runtime.dispatch(envelope)
                 guard result.sequence > lastPublishedSequence else {
                     onStaleProjectionDropped?(result.sequence, lastPublishedSequence)
+                    trace(next, previousState: tracedPreviousState, state: tracedPreviousState, sequence: result.sequence, dropped: true)
                     continue
                 }
                 lastPublishedSequence = result.sequence
                 projection = PickyInteractionProjection(state: result.state)
                 onProjectionPublished?(result.sequence, projection)
+                trace(next, previousState: tracedPreviousState, state: result.state, sequence: result.sequence, dropped: false)
                 effectRunner.run(result.effects)
                 if let journal {
                     let records = result.journalRecords
@@ -82,6 +91,24 @@ final class PickyInteractionCoordinator {
                 }
             }
         }
+    }
+
+    private func trace(
+        _ queued: QueuedInteractionEvent,
+        previousState: PickyInteractionState?,
+        state: PickyInteractionState?,
+        sequence: UInt64,
+        dropped: Bool
+    ) {
+        guard let onEventTraced, let previousState, let state else { return }
+        onEventTraced(PickyInteractionTraceSample(
+            event: queued.event,
+            correlation: queued.correlation,
+            previousState: previousState,
+            state: state,
+            sequence: sequence,
+            dropped: dropped
+        ))
     }
 }
 

@@ -1,0 +1,29 @@
+{
+  "protocolVersion": "2026-08-25",
+  "id": "event-debug-trace",
+  "type": "debugTrace",
+  "timestamp": "2026-10-09T05:00:00.500Z",
+  "commandId": "cmd-debug-read",
+  "instanceId": "agentd-instance-7",
+  "oldestSequence": 1,
+  "nextSequence": 11,
+  "truncated": false,
+  "records": [
+    {
+      "source": "app",
+      "name": "interaction.textContextCaptured",
+      "timestamp": "2026-10-09T05:00:00.125Z",
+      "monotonicMs": 125.5,
+      "inputId": "00000000-0000-0000-0000-000000000007",
+      "contextId": "context-debug-7",
+      "commandId": "cmd-debug-text",
+      "state": "input=idle",
+      "previousState": "input=capturing",
+      "event": "text",
+      "modality": "text",
+      "textLength": 7,
+      "sequence": 11,
+      "receivedAt": "2026-10-09T05:00:00.130Z"
+    }
+  ]
+}

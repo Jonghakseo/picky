@@ -1610,6 +1610,7 @@ final class CompanionManager: ObservableObject {
         }
     }
 
+    /// - Parameter inputID: Reducer identity for this submission. `picky-debug` passes its own so the resulting transitions correlate to one command.
     @discardableResult
     func sendDirectMessage(
         _ text: String,
@@ -1617,7 +1618,8 @@ final class CompanionManager: ObservableObject {
         inkCapture: PickyInkCapture? = nil,
         displayOverrides: PickyScreenContextDisplayOverrides = [:],
         displaySelectionSnapshot: PickyScreenContextDisplaySelectionSnapshot? = nil,
-        quickInputRecipient: QuickInputRecipientProjection? = nil
+        quickInputRecipient: QuickInputRecipientProjection? = nil,
+        inputID: UUID = UUID()
     ) async -> Bool {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return false }
@@ -1653,7 +1655,6 @@ final class CompanionManager: ObservableObject {
         }
 
         activeMainTurnFollowUpSessionID = nil
-        let inputID = UUID()
         if source == .quickInput {
             screenContextDisplayOverridesByTextInputID[inputID] = displayOverrides
             if let effectiveDisplaySelectionSnapshot {
@@ -2224,7 +2225,7 @@ final class CompanionManager: ObservableObject {
              .autocompleteCapabilitiesSnapshot, .autocompleteSuggestionsSnapshot, .autocompleteCompletionApplied,
              .rewindTargetsSnapshot, .sessionRuntimeOptionsSnapshot, .toolHistoryDetailResult, .sessionDiffResult, .sessionRewound, .ack, .unknown,
              .sessionReplyWritingUpdated, .sessionToolCallPreparingUpdated, .sessionAutoRetryUpdated, .terminalSessionSyncOutcome,
-             .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested, .dockGroupsRequested, .pushToTalkControlRequested, .pickySettingsRequested:
+             .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested, .dockGroupsRequested, .pushToTalkControlRequested, .pickySettingsRequested, .debugAppRequested:
             break
         }
     }

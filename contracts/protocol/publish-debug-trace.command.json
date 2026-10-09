@@ -1,0 +1,21 @@
+{
+  "protocolVersion": "2026-08-25",
+  "id": "cmd-debug-publish",
+  "type": "publishDebugTrace",
+  "records": [
+    {
+      "source": "app",
+      "name": "interaction.textContextCaptured",
+      "timestamp": "2026-10-09T05:00:00.125Z",
+      "monotonicMs": 125.5,
+      "inputId": "00000000-0000-0000-0000-000000000007",
+      "contextId": "context-debug-7",
+      "commandId": "cmd-debug-text",
+      "state": "input=idle",
+      "previousState": "input=capturing",
+      "event": "text",
+      "modality": "text",
+      "textLength": 7
+    }
+  ]
+}

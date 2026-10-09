@@ -208,6 +208,9 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// remain in the app composition root.
     var pickySettingsControlHandler: ((PickySettingsRequest) async throws -> JSONValue)?
 
+    /// `picky-debug` transport. Request completion and trace publication are debug-owned.
+    private(set) lazy var debugChannel = PickyDebugRouterChannel.primaryConnection(of: self)
+
     /// Provides app-owned dock groups for `picky pickle-group-list` and main-agent queries.
     var dockGroupsProvider: (() async -> [PickyDockGroupPayload])?
 
@@ -1024,6 +1027,9 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                                 await self?.handlePickySettingsRequest(request)
                             }
                             continue
+                        case .debugAppRequested(let request):
+                            Task { @MainActor [weak self] in await self?.debugChannel.handle(request) }
+                            continue
                         case .dockGroupsRequested(let requestId):
                             Task { @MainActor [weak self] in
                                 await self?.handleDockGroupsRequest(requestId: requestId)
@@ -1060,7 +1066,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     }
 
     func registerAppCapabilities(on client: PickyAgentClient, ownerKey: String) async {
-        var capabilities = ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl"]
+        // `debugControl` carries `picky-debug` app actions and trace publication.
+        var capabilities = ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl", "debugControl"]
         if supportsSessionProjectionV2 {
             capabilities.append("sessionProjectionV2")
         }

@@ -198,6 +198,8 @@ agentd/src/
   protocol.ts                           zod protocol schemas and shared types
   auth.ts                               local auth/token helpers
   connection-info-store.ts              daemon discovery file
+  debug-cli.ts                          local input-state inspection and explicit debug controls
+  features/debug/                      app debug bridge and bounded metadata trace
   session-supervisor.ts                 app-facing session facade
   session-store.ts                      persisted session metadata
   session-message-builder.ts            app-facing message journal/source mapping
@@ -242,6 +244,8 @@ agentd/src/
     package-operations.ts               Pi package manager adapter
     pi-extension-command-runner.ts      Pi RPC child runner
 ```
+
+The development-only `picky-debug` uses the existing authenticated loopback protocol to inspect app state and trace audio/text input transitions. Its repository CLI and Pi skill are not installed onto the product runtime PATH or into bundled skills. Its `debugControl` app bridge routes explicit controls through production input paths; a bounded metadata-only daemon ring links input, context, and command IDs without exporting transcripts. See [debug CLI usage and measurement limits](docs/picky-debug.md).
 
 The browser client lives in `agentd/web/`. It renders the phone UI, reuses the TypeScript session projection reducer, and is bundled with the gateway in the app. Its presentation state is not a replacement for daemon session ownership.
 

@@ -243,6 +243,10 @@ enum PickyMainDelegationChoice: String, Codable, Equatable {
 enum PickyCommandAction: String, Codable, Equatable {
     case press, release
     case stop, resume
+    /// `picky-debug` actions. The app never sends these; they exist so a shared
+    /// `debugApp` command fixture decodes on both ends. App-side handling uses
+    /// `PickyDebugAppAction` from the forwarded `debugAppRequested` event.
+    case snapshot, text, pttPress, pttRelease
 }
 
 extension PickyCommandEnvelope {

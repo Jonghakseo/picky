@@ -1,4 +1,5 @@
 import { isAsyncTracked } from "../domain/async-work-aggregate.js";
+import { debugInputModality, recordDaemonTrace } from "../domain/debug-trace-ring.js";
 import { isTerminalStatus } from "../domain/session-status.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
 import { logAgentd, logLifecycleEvent, type LogField } from "../local-log.js";
@@ -55,10 +56,20 @@ export class FollowUpLifecycleDiagnostics {
     handle: RuntimeSessionHandle,
     textChars: number,
     imageCount: number,
-    source?: PickyContextPacket["source"],
+    context?: Pick<PickyContextPacket, "source" | "id">,
   ): boolean {
+    const source = context?.source;
     const statusAtRequest = this.deps.getSessionOrThrow(sessionId).status;
     const runtimeActiveWhileTerminal = isTerminalStatus(statusAtRequest) && handle.isStreaming;
+    // Debug trace: a Pickle follow-up is the other production path user input takes.
+    recordDaemonTrace("pickle.followUp.requested", {
+      sessionId,
+      ...(context ? { contextId: context.id } : {}),
+      textLength: textChars,
+      state: statusAtRequest,
+      modality: debugInputModality(source),
+      ...(source ? { event: source } : {}),
+    });
     this.logLifecycle("followUpRequested", sessionId, handle, {
       source: source ?? "none",
       textChars,

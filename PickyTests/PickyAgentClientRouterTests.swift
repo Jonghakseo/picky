@@ -365,6 +365,26 @@ private func makePushToTalkControlRequestEvent(
     return try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: data)
 }
 
+private func makeDebugAppRequestEvent(
+    requestId: String = "debug-request-1",
+    commandId: String = "cmd-debug-1",
+    action: String = "snapshot",
+    text: String? = nil
+) throws -> PickyEventEnvelope {
+    var payload: [String: Any] = [
+        "id": "event-debug-app",
+        "protocolVersion": "2026-07-23",
+        "timestamp": "2026-05-01T00:00:00.000Z",
+        "type": "debugAppRequested",
+        "requestId": requestId,
+        "commandId": commandId,
+        "action": action,
+    ]
+    if let text { payload["text"] = text }
+    let data = try JSONSerialization.data(withJSONObject: payload)
+    return try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: data)
+}
+
 private func makePickySettingsRequestEvent(
     requestId: String = "settings-control-1",
     action: String = "set",
@@ -621,7 +641,7 @@ struct PickyAgentClientRouterTests {
 
         let registrations = primary.sentCommands.filter { $0.type == .registerAppCapabilities }
         #expect(registrations.count == registrationsBeforeReconnect + 1)
-        #expect(registrations.last?.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl", "sessionProjectionV2"])
+        #expect(registrations.last?.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl", "debugControl", "sessionProjectionV2"])
     }
 
     @Test func acceptsOnlyCurrentCorrelatedPrimaryBootstrapCompletionOnce() async throws {
@@ -873,7 +893,7 @@ struct PickyAgentClientRouterTests {
         try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
 
         let registration = try #require(primary.sentCommands.first { $0.type == .registerAppCapabilities })
-        #expect(registration.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl"])
+        #expect(registration.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl", "debugControl"])
         #expect(!(registration.capabilities?.contains("sessionProjectionV2") ?? false))
     }
 
@@ -982,6 +1002,111 @@ struct PickyAgentClientRouterTests {
         #expect(completion.errorMessage == nil)
     }
 
+    @Test func advertisesDebugControlCapabilityOnRegistration() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+
+        await router.connect()
+
+        try await waitUntil { primary.sentCommands.contains { $0.type == .registerAppCapabilities } }
+        let registration = try #require(primary.sentCommands.first { $0.type == .registerAppCapabilities })
+        #expect(registration.capabilities?.contains("debugControl") == true)
+    }
+
+    @Test func sendsCompleteDebugAppWithHandlerResult() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        var observed: PickyDebugAppRequest?
+        router.debugChannel.appRequestHandler = { request in
+            observed = request
+            return .object(["schemaVersion": .number(1)])
+        }
+
+        await router.connect()
+        primary.emit(.protocolEvent(try makeDebugAppRequestEvent(action: "text", text: "run the build")))
+
+        try await waitUntil { primary.sentCommands.contains { $0.type == .completeDebugApp } }
+        let completion = try #require(primary.sentCommands.first { $0.type == .completeDebugApp })
+        #expect(observed?.commandId == "cmd-debug-1")
+        #expect(observed?.action == .text)
+        #expect(observed?.text == "run the build")
+        #expect(completion.requestId == "debug-request-1")
+        #expect(completion.result == .object(["schemaVersion": .number(1)]))
+        #expect(completion.errorCode == nil)
+    }
+
+    @Test func sendsCompleteDebugAppWithStructuredErrorWhenHandlerRefuses() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        router.debugChannel.appRequestHandler = { _ in throw PickyDebugControlError.busy("push-to-talk is held") }
+
+        await router.connect()
+        primary.emit(.protocolEvent(try makeDebugAppRequestEvent(action: "text", text: "hello")))
+
+        try await waitUntil { primary.sentCommands.contains { $0.type == .completeDebugApp } }
+        let completion = try #require(primary.sentCommands.first { $0.type == .completeDebugApp })
+        #expect(completion.result == nil)
+        #expect(completion.errorCode == "debug.busy")
+        #expect(completion.errorMessage?.contains("push-to-talk is held") == true)
+    }
+
+    @Test func failsDebugAppRequestBoundedWhenNoHandlerIsWired() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+
+        await router.connect()
+        primary.emit(.protocolEvent(try makeDebugAppRequestEvent()))
+
+        try await waitUntil { primary.sentCommands.contains { $0.type == .completeDebugApp } }
+        let completion = try #require(primary.sentCommands.first { $0.type == .completeDebugApp })
+        #expect(completion.result == nil)
+        #expect(completion.errorMessage?.isEmpty == false)
+    }
+
+    @Test func publishesDebugTraceRecordsOnThePrimaryConnection() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        let record = PickyDebugTraceRecord(
+            source: .app,
+            name: "interaction.textSubmitted",
+            timestamp: Date(timeIntervalSince1970: 0),
+            monotonicMs: 1,
+            inputId: "11111111-1111-1111-1111-111111111111",
+            commandId: "cmd-debug-1"
+        )
+
+        await router.connect()
+        let delivered = await router.debugChannel.publish([record])
+        let emptyDelivered = await router.debugChannel.publish([])
+
+        let published = primary.sentCommands.filter { $0.type == .publishDebugTrace }
+        #expect(published.count == 1)
+        #expect(published.first?.records == [record])
+        // The recorder counts its own loss, so delivery has to be reported back.
+        #expect(delivered)
+        #expect(emptyDelivered)
+    }
+
     @Test func sendsCompletePushToTalkControlWithErrorMessageWhenHandlerThrows() async throws {
         let primary = StubAgentClient(id: "primary")
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
@@ -1032,7 +1157,7 @@ struct PickyAgentClientRouterTests {
         let child = try #require(clientFactory.madeClients.first?.client)
         try await waitUntil { child.sentCommands.contains { $0.type == .registerAppCapabilities } }
         let registration = try #require(child.sentCommands.first { $0.type == .registerAppCapabilities })
-        #expect(registration.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl", "sessionProjectionV2"])
+        #expect(registration.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl", "debugControl", "sessionProjectionV2"])
         #expect(primary.sentCommands.filter { $0.type == .registerAppCapabilities }.isEmpty)
     }
 

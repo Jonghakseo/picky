@@ -8,6 +8,7 @@
     "externalEntry",
     "pushToTalkControl",
     "settingsControl",
+    "debugControl",
     "sessionProjectionV2"
   ],
   "profile": "desktop"

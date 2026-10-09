@@ -163,6 +163,31 @@ struct ProtocolContractTests {
         #expect(reply.didStreamNarration == true)
     }
 
+    @Test func debugBridgePreservesInputCorrelationAcrossSharedFixtures() throws {
+        let urls = try fixtureURLs(in: "contracts/protocol")
+        func data(_ name: String) throws -> Data {
+            try Data(contentsOf: #require(urls.first { $0.lastPathComponent == name }))
+        }
+        let decoder = JSONDecoder.pickyAgentProtocolDecoder()
+        let request = try decoder.decode(PickyEventEnvelope.self, from: data("debug-app-requested.event.json"))
+        guard case .debugAppRequested(let action) = request.event else {
+            Issue.record("Missing debug request decoder")
+            return
+        }
+        #expect(action.action == .text)
+        #expect(action.commandId == "cmd-debug-text")
+        let trace = try decoder.decode(PickyCommandEnvelope.self, from: data("publish-debug-trace.command.json"))
+        let record = try #require(trace.records?.first)
+        #expect(record.commandId == action.commandId)
+        #expect(record.contextId == "context-debug-7")
+        #expect(record.monotonicMs == 125.5)
+        #expect(record.textLength == 7)
+        let encoder = JSONEncoder.pickyAgentProtocolEncoder()
+        #expect(try decoder.decode(PickyCommandEnvelope.self, from: encoder.encode(trace)) == trace)
+        let completion = try decoder.decode(PickyCommandEnvelope.self, from: data("complete-debug-app.command.json"))
+        #expect(completion.requestId == action.requestId)
+    }
+
     @Test func decodesEveryProtocolFixture() throws {
         let decoder = JSONDecoder.pickyAgentProtocolDecoder()
         let fixtures = try fixtureURLs(in: "contracts/protocol")
@@ -1572,7 +1597,7 @@ struct ProtocolContractTests {
         #expect(fixture.type == .registerAppCapabilities)
         #expect(fixture.profile == .desktop)
         #expect(fixture.capabilities == [
-            "pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl", "sessionProjectionV2",
+            "pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl", "settingsControl", "debugControl", "sessionProjectionV2",
         ])
 
         let encoder = JSONEncoder.pickyAgentProtocolEncoder()

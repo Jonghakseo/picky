@@ -1,0 +1,14 @@
+{
+  "protocolVersion": "2026-08-25",
+  "id": "event-debug-result",
+  "type": "debugAppResult",
+  "timestamp": "2026-10-09T05:00:00.000Z",
+  "requestId": "debug-request-7",
+  "commandId": "cmd-debug-text",
+  "result": {
+    "schemaVersion": 1,
+    "accepted": true,
+    "inputId": "00000000-0000-0000-0000-000000000007",
+    "completesTurn": false
+  }
+}

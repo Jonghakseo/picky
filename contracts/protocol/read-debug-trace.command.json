@@ -1,0 +1,7 @@
+{
+  "protocolVersion": "2026-08-25",
+  "id": "cmd-debug-read",
+  "type": "readDebugTrace",
+  "afterSequence": 10,
+  "limit": 100
+}

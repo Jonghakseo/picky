@@ -56,7 +56,8 @@ struct AttachmentViewportWidthKey: PreferenceKey {
 struct PickyComposerAttachmentChipView: View {
     let attachment: PickyComposerAttachment
     let onRemove: () -> Void
-    @ObservedObject private var thumbnailLoader = PickyConversationAttachmentThumbnailLoader.shared
+    /// Local state, so a chip re-renders only for its own thumbnail.
+    @State private var thumbnail: NSImage?
 
     var body: some View {
         HStack(spacing: 5) {
@@ -86,14 +87,19 @@ struct PickyComposerAttachmentChipView: View {
         .overlay(Capsule().stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.5))
         .help(attachment.path)
         .task(id: attachment.url) {
-            guard attachment.isImage else { return }
-            _ = thumbnailLoader.loadThumbnail(for: attachment.url)
+            guard attachment.isImage else {
+                thumbnail = nil
+                return
+            }
+            let image = await PickyConversationAttachmentThumbnailLoader.shared.thumbnail(for: attachment.url)
+            guard !Task.isCancelled else { return }
+            thumbnail = image
         }
     }
 
     @ViewBuilder
     private var leading: some View {
-        if let image = thumbnailLoader.thumbnail(for: attachment.url) {
+        if let image = thumbnail {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.medium)

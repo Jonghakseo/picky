@@ -17,18 +17,22 @@ struct PickyToolImageBubbleView: View {
     var createdAt: Date? = nil
 
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
+    // File metadata lives in state so `body` never touches the file system.
+    // `.task(id:)` revalidates it once per path.
+    @State private var pixelSize: CGSize?
     @State private var thumbnail: NSImage?
     @State private var loadFailed = false
 
     init(toolImage: PickyToolImage, createdAt: Date? = nil) {
         self.toolImage = toolImage
         self.createdAt = createdAt
-        _thumbnail = State(initialValue: PickyToolImageLoader.cachedThumbnail(path: toolImage.path, maxPixel: PickyToolImageLayout.maxThumbnailPixel))
+        let state = PickyToolImageLoader.knownState(path: toolImage.path, maxPixel: PickyToolImageLayout.maxThumbnailPixel)
+        _pixelSize = State(initialValue: state.pixelSize)
+        _thumbnail = State(initialValue: state.thumbnail)
     }
 
     var body: some View {
         let _ = PickyPerf.event("tool_image_bubble")
-        let pixelSize = PickyToolImageLoader.pixelSize(path: toolImage.path)
         HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
             VStack(alignment: .leading, spacing: DS.Spacing.space1) {
                 caption
@@ -41,10 +45,12 @@ struct PickyToolImageBubbleView: View {
             Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
         }
         .task(id: toolImage.path) {
-            thumbnail = PickyToolImageLoader.cachedThumbnail(path: toolImage.path, maxPixel: PickyToolImageLayout.maxThumbnailPixel)
-            loadFailed = false
-            guard pixelSize != nil else { return }
             let path = toolImage.path
+            let state = PickyToolImageLoader.revalidatedState(path: path, maxPixel: PickyToolImageLayout.maxThumbnailPixel)
+            pixelSize = state.pixelSize
+            thumbnail = state.thumbnail
+            loadFailed = false
+            guard state.pixelSize != nil else { return }
             let image = await PickyToolImageLoader.thumbnail(path: path, maxPixel: PickyToolImageLayout.maxThumbnailPixel)
             guard !Task.isCancelled else { return }
             thumbnail = image
@@ -194,16 +200,51 @@ enum PickyToolImageLayout {
 
 @MainActor
 enum PickyToolImageLoader {
-    private static let thumbnails = NSCache<NSString, NSImage>()
-    private static let pixelSizes = NSCache<NSString, NSValue>()
+    struct Known {
+        let pixelSize: CGSize?
+        let thumbnail: NSImage?
+    }
 
-    /// Reads only the image header. Cache entries expire when the file changes.
-    static func pixelSize(path: String) -> CGSize? {
-        let key = cacheKey(path: path, maxPixel: 0) as NSString
-        if let cached = pixelSizes.object(forKey: key) { return cached.sizeValue }
-        guard let size = readPixelSize(path: path) else { return nil }
-        pixelSizes.setObject(NSValue(size: size), forKey: key)
-        return size
+    /// What was last learned about a path: the file's modification time and the
+    /// size read from its header (nil when unreadable).
+    private final class Snapshot {
+        let modified: TimeInterval
+        let pixelSize: CGSize?
+        init(modified: TimeInterval, pixelSize: CGSize?) {
+            self.modified = modified
+            self.pixelSize = pixelSize
+        }
+    }
+
+    private static let thumbnails = NSCache<NSString, NSImage>()
+    private static let snapshots = NSCache<NSString, Snapshot>()
+
+    /// Cheap lookup for view init: no file system access on a cache hit. A miss
+    /// reads the header once so the row is sized correctly on its first frame.
+    static func knownState(path: String, maxPixel: Int) -> Known {
+        guard let snapshot = snapshots.object(forKey: path as NSString) else {
+            return revalidatedState(path: path, maxPixel: maxPixel)
+        }
+        return state(path: path, snapshot: snapshot, maxPixel: maxPixel)
+    }
+
+    /// Stats the file once. A rewritten screenshot at the same path gets its
+    /// header re-read and misses the old thumbnail.
+    static func revalidatedState(path: String, maxPixel: Int) -> Known {
+        let modified = modificationTime(path: path)
+        if let snapshot = snapshots.object(forKey: path as NSString), snapshot.modified == modified {
+            return state(path: path, snapshot: snapshot, maxPixel: maxPixel)
+        }
+        let snapshot = Snapshot(modified: modified, pixelSize: readPixelSize(path: path))
+        snapshots.setObject(snapshot, forKey: path as NSString)
+        return state(path: path, snapshot: snapshot, maxPixel: maxPixel)
+    }
+
+    private static func state(path: String, snapshot: Snapshot, maxPixel: Int) -> Known {
+        Known(
+            pixelSize: snapshot.pixelSize,
+            thumbnail: thumbnails.object(forKey: thumbnailKey(path: path, modified: snapshot.modified, maxPixel: maxPixel) as NSString)
+        )
     }
 
     private static func readPixelSize(path: String) -> CGSize? {
@@ -218,12 +259,11 @@ enum PickyToolImageLoader {
         return (5...8).contains(orientation) ? CGSize(width: height, height: width) : CGSize(width: width, height: height)
     }
 
-    static func cachedThumbnail(path: String, maxPixel: Int) -> NSImage? {
-        thumbnails.object(forKey: cacheKey(path: path, maxPixel: maxPixel) as NSString)
-    }
-
+    /// Call `revalidatedState` first so the snapshot carries the current
+    /// modification time; the key then follows the file's contents.
     static func thumbnail(path: String, maxPixel: Int) async -> NSImage? {
-        let key = cacheKey(path: path, maxPixel: maxPixel) as NSString
+        let modified = snapshots.object(forKey: path as NSString)?.modified ?? modificationTime(path: path)
+        let key = thumbnailKey(path: path, modified: modified, maxPixel: maxPixel) as NSString
         if let cached = thumbnails.object(forKey: key) { return cached }
         // Decode pixels off-actor; create the AppKit object only on MainActor.
         let pixels = await Task.detached(priority: .utility) {
@@ -247,11 +287,12 @@ enum PickyToolImageLoader {
         return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 
-    /// The modification date keeps a rewritten screenshot at the same path from
-    /// showing a stale cached thumbnail.
-    private static func cacheKey(path: String, maxPixel: Int) -> String {
-        let modified = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date)?
+    private static func modificationTime(path: String) -> TimeInterval {
+        (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date)?
             .timeIntervalSince1970 ?? 0
-        return "\(path)|\(modified)|\(maxPixel)"
+    }
+
+    private static func thumbnailKey(path: String, modified: TimeInterval, maxPixel: Int) -> String {
+        "\(path)|\(modified)|\(maxPixel)"
     }
 }

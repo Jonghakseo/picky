@@ -6,7 +6,6 @@
 //
 
 import AppKit
-import Combine
 import Foundation
 import ImageIO
 
@@ -59,50 +58,48 @@ nonisolated enum PickyConversationAttachmentThumbnailPolicy {
 
 // MARK: - Thumbnail loader
 
+/// Not an `ObservableObject` on purpose: publishing one shared dictionary made
+/// every chip re-evaluate its body whenever any other thumbnail finished
+/// decoding. Chips await their own thumbnail and keep it in local state.
 @MainActor
-final class PickyConversationAttachmentThumbnailLoader: ObservableObject {
+final class PickyConversationAttachmentThumbnailLoader {
     static let shared = PickyConversationAttachmentThumbnailLoader()
 
-    @Published private(set) var thumbnailsByCacheKey: [PickyConversationAttachmentThumbnailPolicy.CacheKey: NSImage] = [:]
+    /// Bounds memory for long sessions that attach many images.
+    static let cacheCountLimit = 64
 
-    private var inFlightTasks: [PickyConversationAttachmentThumbnailPolicy.CacheKey: Task<Void, Never>] = [:]
+    private let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = PickyConversationAttachmentThumbnailLoader.cacheCountLimit
+        return cache
+    }()
 
-    func thumbnail(for attachmentURL: URL) -> NSImage? {
-        guard let key = PickyConversationAttachmentThumbnailPolicy.cacheKey(for: attachmentURL) else {
+    private var inFlightTasks: [PickyConversationAttachmentThumbnailPolicy.CacheKey: Task<NSImage?, Never>] = [:]
+
+    /// Returns the thumbnail for a file URL, decoding it off the main actor on a
+    /// cache miss. Concurrent requests for the same file share one decode.
+    func thumbnail(for attachmentURL: URL) async -> NSImage? {
+        guard attachmentURL.isFileURL,
+              let key = PickyConversationAttachmentThumbnailPolicy.cacheKey(for: attachmentURL) else {
             return nil
         }
 
-        return thumbnailsByCacheKey[key]
-    }
-
-    @discardableResult
-    func loadThumbnail(for attachmentURL: URL) -> Task<Void, Never> {
-        guard attachmentURL.isFileURL,
-              let key = PickyConversationAttachmentThumbnailPolicy.cacheKey(for: attachmentURL) else {
-            return Task {}
-        }
-
-        if thumbnailsByCacheKey[key] != nil {
+        let cacheKey = key.keyString as NSString
+        if let cached = cache.object(forKey: cacheKey) {
             PickyPerf.event("attachment_thumbnail_cache_hit")
-            return Task {}
+            return cached
         }
 
         if let existingTask = inFlightTasks[key] {
             PickyPerf.event("attachment_thumbnail_cache_hit")
-            return existingTask
+            return await existingTask.value
         }
 
         PickyPerf.event("attachment_thumbnail_cache_miss")
 
         let standardizedURL = PickyConversationAttachmentThumbnailPolicy.standardizeURL(attachmentURL)
-        let loadTask = Task { [weak self] in
-            guard let self else { return }
-            defer { self.inFlightTasks[key] = nil }
-
-            if self.thumbnailsByCacheKey[key] != nil {
-                PickyPerf.event("attachment_thumbnail_cache_hit")
-                return
-            }
+        let loadTask = Task { [weak self] () -> NSImage? in
+            defer { self?.inFlightTasks[key] = nil }
 
             let decodeTask = Task.detached(priority: .utility) { [standardizedURL] in
                 PickyPerf.interval("attachment_thumbnail_decode") {
@@ -115,18 +112,19 @@ final class PickyConversationAttachmentThumbnailLoader: ObservableObject {
                 onCancel: { decodeTask.cancel() }
             )
 
-            guard !Task.isCancelled else { return }
-            guard let decodedImage else { return }
+            guard let decodedImage else { return nil }
 
             // NSImage creation and publish happen on MainActor.
-            self.thumbnailsByCacheKey[key] = NSImage(
+            let image = NSImage(
                 cgImage: decodedImage,
                 size: NSSize(width: decodedImage.width, height: decodedImage.height)
             )
+            self?.cache.setObject(image, forKey: cacheKey)
+            return image
         }
 
         inFlightTasks[key] = loadTask
-        return loadTask
+        return await loadTask.value
     }
 
     private nonisolated static func decodeCGImage(for url: URL) -> CGImage? {

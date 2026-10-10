@@ -198,6 +198,7 @@ gh release view <tag>
 - **새 태그 검증**: stable=`X.Y.Z`, beta=`X.Y.Z-beta.N`, alpha=`X.Y.Z-alpha.N`.
 - **legacy 재실행**: 기존 숫자형 beta 또는 `*-stable` GitHub Release만 manual dispatch에서 `allow_legacy_tag=true`, `create_release_if_missing=false`로 허용한다.
 - **동작**: build → notarize app → DMG notarize/staple → Sparkle update zip + `sign_update` → `appcast.xml` prepend → 릴리즈 노트 갱신.
+- **롤백·회수**: 문제 릴리즈의 appcast 항목 제거와 핫픽스 절차는 `runbook/rollback.md`를 따른다.
 - **alpha 채널은 Sparkle 비활성**: `AppBundleConfiguration.swift`에서 `releaseChannel == "alpha"`면 `SPUUpdater` 시작 자체를 안 함(sideload 전용).
 - **rerun 함정**: GitHub Actions `rerun`은 트리거 당시 commit의 workflow 정의를 캐싱한다. workflow 수정 후엔 `workflow_dispatch`로 새 run을 띄워야 새 정의가 적용된다.
 - **서명 키**: public 키는 `Picky/Info.plist#SUPublicEDKey`, private 키는 macOS Keychain(계정 `creatrip`) + GitHub Secret `PICKY_SPARKLE_ED_PRIVATE_KEY`.

@@ -1486,20 +1486,7 @@ final class CompanionManager: ObservableObject {
             || (usesCurrentScreenContextTarget && selectionStore.screenContextTargetSessionID == sessionID)
         let hasUserMarks = !context.inkMarks.isEmpty
         guard isScreenContextTargeted || hasUserMarks else {
-            return PickyContextPacket(
-                id: context.id,
-                source: context.source,
-                capturedAt: context.capturedAt,
-                transcript: context.transcript,
-                selectedText: context.selectedText,
-                cwd: context.cwd,
-                activeApp: context.activeApp,
-                activeWindow: context.activeWindow,
-                browser: context.browser,
-                screenshots: [],
-                inkMarks: [],
-                warnings: context.warnings
-            )
+            return context.withScreenshotsCleared()
         }
         return context
     }

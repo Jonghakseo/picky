@@ -17035,13 +17035,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choose a task to start a new Pickle."
+            "value": "Choose a task. Picky asks for the details it needs to get started."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "원하는 작업을 골라 새 Pickle을 시작하세요."
+            "value": "원하는 작업을 고르면 Picky가 필요한 내용을 물어보며 시작해요."
           }
         }
       }
@@ -17297,7 +17297,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "랜딩 페이지 제작"
+            "value": "랜딩 페이지 만들기"
           }
         }
       }
@@ -17307,13 +17307,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Answer a few questions to build a web page for your product or service."
+            "value": "Answer a few questions to get a web page that introduces your product or service."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "질문에 답하며 제품이나 서비스를 소개하는 웹페이지를 만들어요."
+            "value": "몇 가지 질문에 답하면 제품이나 서비스를 소개하는 웹페이지를 만들어요."
           }
         }
       }
@@ -17329,7 +17329,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "네이티브 앱 제작"
+            "value": "네이티브 앱 만들기"
           }
         }
       }
@@ -17339,13 +17339,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shape a native app that runs locally, through conversation."
+            "value": "Build the first version of a Mac or iPhone app through conversation."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "대화하며 이 기기에서 실행할 앱을 만들어요."
+            "value": "대화하며 Mac이나 iPhone 앱의 첫 버전을 만들어요."
           }
         }
       }
@@ -17355,13 +17355,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Start an app guide"
+            "value": "Learn an app"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "앱 가이드 시작"
+            "value": "앱 사용법 배우기"
           }
         }
       }
@@ -17371,13 +17371,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Learn the app you're using, one step at a time, with Picky."
+            "value": "Picky looks at the app on your screen and shows you what to do, one step at a time."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "현재 사용하는 앱을 Picky와 함께 한 단계씩 익혀요."
+            "value": "Picky가 화면 속 앱을 보며 사용법을 한 단계씩 알려 줘요."
           }
         }
       }
@@ -17393,7 +17393,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "파일 정리 시작"
+            "value": "파일 정리하기"
           }
         }
       }
@@ -17403,13 +17403,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tidy a local folder according to the rules you choose."
+            "value": "Tidy a folder on this Mac by the rules you choose."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "원하는 기준에 맞춰 이 기기의 폴더를 정리해요."
+            "value": "원하는 기준에 맞춰 이 Mac의 폴더를 정리해요."
           }
         }
       }
@@ -17419,13 +17419,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ask me what I want to make, one question at a time, and start once you have enough detail."
+            "value": "Ask me what you need to know, one question at a time, and start once you have enough detail."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "무엇을 만들고 싶은지 한 번에 하나씩 질문하고, 정보가 충분해지면 작업을 시작하세요."
+            "value": "필요한 내용을 한 번에 하나씩 물어보고, 정보가 충분해지면 시작하세요."
           }
         }
       }
@@ -19387,13 +19387,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Starting a task opens a new Pickle. It asks for the details it needs one question at a time. You can return to the same Pickle later."
+            "value": "Most tasks open a new Pickle that asks for what it needs, one question at a time. You can return to that Pickle later. Learn an app continues in your Picky conversation instead."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "작업을 시작하면 새 Pickle이 열리고 필요한 정보를 하나씩 물어봐요. 나중에 같은 Pickle에서 이어갈 수 있어요."
+            "value": "대부분의 작업은 새 Pickle에서 필요한 내용을 하나씩 물어보며 진행해요. 시작한 Pickle은 나중에 이어서 할 수 있어요. 앱 사용법 배우기는 Picky 대화에서 진행해요."
           }
         }
       }
@@ -34348,6 +34348,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "반복 작업은 한 줄로 묶었어요. 누르면 목록이 열려요."
+          }
+        }
+      }
+    },
+    "hub.quickStart.error.mainSendFailed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t send this to your Picky conversation. Try again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 대화로 보내지 못했어요. 다시 시도해 주세요."
           }
         }
       }

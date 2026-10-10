@@ -5,6 +5,8 @@
 //  Turns a workflow selection into a real Pickle: create an empty Pickle in
 //  the chosen folder, wait for the daemon projection to surface it, send the
 //  bundled guide as the first instruction, and open the card in the HUD.
+//  Main-conversation workflows skip the Pickle and send the guide to the
+//  main agent instead.
 //
 
 import Combine
@@ -26,10 +28,14 @@ final class PickyHubQuickStartLauncher: ObservableObject {
 
     enum LaunchError: LocalizedError {
         case sessionNotProjected
+        case mainConversationUnavailable
+        case mainConversationRejected(String?)
 
         var errorDescription: String? {
             switch self {
             case .sessionNotProjected: L10n.t("hub.quickStart.error.notProjected")
+            case .mainConversationUnavailable: L10n.t("hub.quickStart.error.mainSendFailed")
+            case .mainConversationRejected(let message): message ?? L10n.t("hub.quickStart.error.mainSendFailed")
             }
         }
     }
@@ -40,6 +46,8 @@ final class PickyHubQuickStartLauncher: ObservableObject {
     private let sessions: PickySessionListViewModel
     private let defaultCwd: () -> String
     private let presentSessionInHUD: (String) -> Void
+    private let sendToMainAgent: (String) async throws -> Void
+    private let openMainConversation: () -> Void
     private let defaults: UserDefaults
     private let projectionTimeoutNanoseconds: UInt64
     private var launchGeneration: UInt64 = 0
@@ -51,12 +59,16 @@ final class PickyHubQuickStartLauncher: ObservableObject {
         sessions: PickySessionListViewModel,
         defaultCwd: @escaping () -> String,
         presentSessionInHUD: @escaping (String) -> Void,
+        sendToMainAgent: @escaping (String) async throws -> Void = { _ in },
+        openMainConversation: @escaping () -> Void = {},
         defaults: UserDefaults = PickyRuntimeEnvironment.userDefaults,
         projectionTimeoutNanoseconds: UInt64 = 20_000_000_000
     ) {
         self.sessions = sessions
         self.defaultCwd = defaultCwd
         self.presentSessionInHUD = presentSessionInHUD
+        self.sendToMainAgent = sendToMainAgent
+        self.openMainConversation = openMainConversation
         self.defaults = defaults
         self.projectionTimeoutNanoseconds = projectionTimeoutNanoseconds
         if let data = defaults.data(forKey: Self.recordKey),
@@ -79,6 +91,10 @@ final class PickyHubQuickStartLauncher: ObservableObject {
     /// of creating another Pickle.
     func start(_ workflow: PickyHubQuickStartWorkflow, cwd: String? = nil) async {
         guard !phase.isBusy else { return }
+        if workflow.destination == .mainConversation {
+            await startInMainConversation(workflow)
+            return
+        }
         let generation = beginLaunch(workflowID: workflow.id)
         let targetCwd = (cwd ?? defaultCwd()).trimmingCharacters(in: .whitespacesAndNewlines)
         lastAttempt = (workflow, targetCwd)
@@ -165,6 +181,22 @@ final class PickyHubQuickStartLauncher: ObservableObject {
         let language = resolved.language.languageCode?.identifier == "ko" ? "Korean" : "English"
         return workflow.loadGuide()
             + "\n\nReply language: \(language). Start the interview now with the first question.\n"
+    }
+
+    /// The main conversation already exists, so there is no session to track or
+    /// resume. A failed send is retried by sending again: the user started it.
+    private func startInMainConversation(_ workflow: PickyHubQuickStartWorkflow) async {
+        let generation = beginLaunch(workflowID: workflow.id)
+        lastAttempt = (workflow, "")
+        lastAttemptSessionID = nil
+        do {
+            try await sendToMainAgent(Self.firstInstruction(for: workflow))
+            guard isCurrent(generation) else { return }
+            phase = .idle
+            openMainConversation()
+        } catch {
+            settleCreationFailure(workflowID: workflow.id, generation: generation, error: error)
+        }
     }
 
     private func beginLaunch(workflowID: String) -> UInt64 {

@@ -66,9 +66,13 @@ struct PickyHubQuickStartWorkflowCard: View {
             .disabled(!isEnabled)
     }
 
+    /// The main conversation has no per-workflow folder to choose.
+    @ViewBuilder
     private var chooseFolderButton: some View {
-        PickyHubTextLink(title: "hub.quickStart.chooseFolder", action: onChooseFolder)
-            .disabled(!isEnabled)
+        if workflow.destination == .pickle {
+            PickyHubTextLink(title: "hub.quickStart.chooseFolder", action: onChooseFolder)
+                .disabled(!isEnabled)
+        }
     }
 }
 

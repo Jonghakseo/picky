@@ -396,7 +396,14 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                     } else {
                         self.hudOverlayManager.focusSession(id: sessionID)
                     }
-                }
+                },
+                sendToMainAgent: { [weak companionManager] text in
+                    guard let companionManager else { throw PickyHubQuickStartLauncher.LaunchError.mainConversationUnavailable }
+                    guard await companionManager.sendDirectMessage(text) else {
+                        throw PickyHubQuickStartLauncher.LaunchError.mainConversationRejected(companionManager.directMessageError)
+                    }
+                },
+                openMainConversation: { [hubNavigator] in hubNavigator.select(.conversation) }
             ),
             pluginCatalog: PickyHubPluginCatalogViewModel(
                 curated: PickyCuratedPluginsViewModel(),

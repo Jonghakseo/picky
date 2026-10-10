@@ -204,6 +204,55 @@ struct PickyHubQuickStartLauncherTests {
         #expect(fixture.launcher.phase == .started(workflowID: "landing", sessionID: "quick-1"))
     }
 
+    @Test func appGuideRunsInTheMainConversationWithoutCreatingAPickle() async throws {
+        var sentToMain: [String] = []
+        var openedConversation = 0
+        let fixture = makeFixture(
+            sessionIDs: [],
+            sendToMainAgent: { sentToMain.append($0) },
+            openMainConversation: { openedConversation += 1 }
+        )
+
+        await fixture.launcher.start(.appGuide, cwd: "/tmp/ignored")
+
+        #expect(sentToMain.count == 1)
+        #expect(sentToMain.first?.hasPrefix("# Quick start: App guide") == true)
+        #expect(sentToMain.first?.contains("Start the interview now") == true)
+        #expect(openedConversation == 1)
+        #expect(fixture.childSpawner.calls.isEmpty)
+        #expect(fixture.rootClient.sentCommands.isEmpty)
+        #expect(fixture.launcher.lastRecord == nil)
+        #expect(fixture.launcher.phase == .idle)
+    }
+
+    @Test func failedMainConversationSendStaysVisibleAndRetrySendsAgain() async throws {
+        struct SendFailure: LocalizedError { var errorDescription: String? { "Main agent unavailable" } }
+        var attempts = 0
+        var openedConversation = 0
+        let fixture = makeFixture(
+            sessionIDs: [],
+            sendToMainAgent: { _ in
+                attempts += 1
+                if attempts == 1 { throw SendFailure() }
+            },
+            openMainConversation: { openedConversation += 1 }
+        )
+
+        await fixture.launcher.start(.appGuide)
+
+        #expect(fixture.launcher.phase == .failed(workflowID: "guide", message: "Main agent unavailable"))
+        #expect(!fixture.launcher.retryWillOpenExistingSession)
+        #expect(openedConversation == 0)
+
+        await fixture.launcher.retry()
+
+        #expect(attempts == 2)
+        #expect(openedConversation == 1)
+        #expect(fixture.launcher.phase == .idle)
+        #expect(fixture.childSpawner.calls.isEmpty)
+        #expect(fixture.launcher.lastRecord == nil)
+    }
+
     @Test func delayedProjectionWaitsBeforeSendingTheStrictKickoff() async throws {
         let fixture = makeFixture(sessionIDs: ["quick-1"])
         let launch = Task { @MainActor in
@@ -367,7 +416,9 @@ struct PickyHubQuickStartLauncherTests {
 
     private func makeFixture(
         sessionIDs: [String],
-        presentSessionInHUD: @escaping (String) -> Void = { _ in }
+        presentSessionInHUD: @escaping (String) -> Void = { _ in },
+        sendToMainAgent: @escaping (String) async throws -> Void = { _ in },
+        openMainConversation: @escaping () -> Void = {}
     ) -> QuickStartFixture {
         var remainingSessionIDs = sessionIDs
         let rootClient = QuickStartClient()
@@ -394,6 +445,8 @@ struct PickyHubQuickStartLauncherTests {
             sessions: sessions,
             defaultCwd: { "/tmp/default" },
             presentSessionInHUD: presentSessionInHUD,
+            sendToMainAgent: sendToMainAgent,
+            openMainConversation: openMainConversation,
             defaults: defaults,
             projectionTimeoutNanoseconds: 1_000_000_000
         )

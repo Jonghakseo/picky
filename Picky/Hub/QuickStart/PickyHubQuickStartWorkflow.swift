@@ -3,7 +3,8 @@
 //  Picky
 //
 //  The fixed quick-start workflows. Each one ships a bundled markdown guide
-//  (`quick-start-<id>.md`) that becomes the first instruction of a new Pickle;
+//  (`quick-start-<id>.md`) that becomes the first instruction of a new Pickle,
+//  or of the main conversation for workflows that need the user's screen;
 //  Pi drives the interview from there, one question at a time.
 //
 
@@ -11,11 +12,20 @@ import Foundation
 import SwiftUI
 
 struct PickyHubQuickStartWorkflow: Identifiable, Equatable {
+    enum Destination: Equatable {
+        /// A new Pickle in a chosen folder. Pickles get no screen capture.
+        case pickle
+        /// The always-on main agent, the only route that receives screen
+        /// context from push-to-talk or quick input and can draw overlays.
+        case mainConversation
+    }
+
     let id: String
     let titleKey: LocalizedStringKey
     let descriptionKey: LocalizedStringKey
     let systemImage: String
     let guideResourceName: String
+    var destination: Destination = .pickle
 
     var title: String { L10n.t("hub.quickStart.workflow.\(id).title") }
 
@@ -40,7 +50,8 @@ struct PickyHubQuickStartWorkflow: Identifiable, Equatable {
         titleKey: "hub.quickStart.workflow.guide.title",
         descriptionKey: "hub.quickStart.workflow.guide.description",
         systemImage: "book.closed",
-        guideResourceName: "quick-start-guide"
+        guideResourceName: "quick-start-guide",
+        destination: .mainConversation
     )
 
     static let fileOrganizing = PickyHubQuickStartWorkflow(

@@ -75,7 +75,7 @@ Picky is the client layer for local Pi sessions and sends no separate telemetry.
 
 The optional phone web app lets you check progress, answer questions, and send instructions to the same Picky and Pickle conversations while away from your Mac. Sessions still run on the Mac; the phone is another way to control them, not a separate agent service.
 
-Enable **Remote access** in the Hub and pair your phone over your own Tailscale or Cloudflare connection. Remote access is off by default, requires Picky to be running and the Mac awake, and uses no Picky-operated server. See [phone setup and usage](docs/user-manual.md#15-remote-access-from-your-phone). For beta builds, use the [release list](https://github.com/Jonghakseo/picky/releases).
+Enable **Web access** in the Hub and pair your phone over your own Tailscale or Cloudflare connection. Web access is off by default, requires Picky to be running and the Mac awake, and uses no Picky-operated server. See [phone setup and usage](docs/user-manual.md#15-web-access-this-macs-browser-and-your-phone). For beta builds, use the [release list](https://github.com/Jonghakseo/picky/releases).
 
 ## Getting started
 

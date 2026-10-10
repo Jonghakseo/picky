@@ -29,11 +29,11 @@ Setup actions shown in Hub include:
 - **Grant**: requests or opens the matching macOS permission pane.
 - **Find App**: reveals Picky in Finder and opens Accessibility settings, useful for unsigned/dev builds.
 
-When all prerequisites are satisfied, Picky shows Hub's Dashboard and its seven-page sidebar.
+When all prerequisites are satisfied, Picky shows Hub's Dashboard and its nine-page sidebar.
 
 ## 2. Picky Hub
 
-Click the Picky menu bar icon to open Hub. It is a resizable macOS window with a seven-page sidebar, not a transient companion panel.
+Click the Picky menu bar icon to open Hub. It is a resizable macOS window with a nine-page sidebar, not a transient companion panel.
 
 Hub behavior:
 
@@ -45,7 +45,7 @@ Hub behavior:
 
 ### 2.1 Sidebar pages
 
-The sidebar contains these eight destinations:
+The sidebar contains these nine destinations:
 
 - **Dashboard**: an update card when a new Picky version is ready, setup and shell-command status, **Your days with Picky** (the same daily streak and activity calendar as Statistics **Rhythm**, with a **View statistics** link), guide previews, Quick Start shortcuts, up to four recommended plugins (plugins you have not installed yet come first), and feedback entry points.
 - **Statistics**: four local tabs. **Rhythm** (the first tab) shows your daily streak and activity calendar, then hour-of-day patterns, work types, and per-Pickle records filtered by period (**Last 7 days** ends today) and project. **Badges** has 24 badges earned from your whole history, with progress toward challenge milestones. Earned badges stay unlocked even if older history is no longer available. **Pickle Hall of Fame** totals changed files, results, tool runs, and subagents, and lists the all-time leading Pickles, which you can open in the HUD. **AI usage** shows plan limits and the last 30 days of token usage. Automatic work classification is optional and is controlled in **Hub → Settings → Notifications, permissions, and privacy**.
@@ -64,6 +64,7 @@ The top of **Statistics → AI usage** shows a **Plan limits** card for each Cla
 - **Scheduled jobs**: a read-only calendar of schedules registered with the Cron plugin. It opens on **By job**, one row per job with a status mark for each day; click a mark to see that day's runs. **Month** lists one-time jobs in each day and folds recurring jobs into one **N repeating** line that opens their list; **Week** shows runs by hour. Every view shows recorded runs and dashed projections for recurring jobs, a summary bar with the next run and the number of runs in the shown period, an agenda list, and filters; click a day entry to read or copy the instructions of that run. Create or manage schedules on the Plugins page by talking to Picky.
 - **Plugins**: three tabs. **Extensions** and **Skills** list the curated Pi plugin catalog by type; search or filter by category, view details, then install, update, remove, or set up supported plugins. **MCP servers** manages MCP servers. Changes apply to main Picky and live Pickles automatically.
 - **Recent Conversation**: the Picky main-agent timeline and composer.
+- **Web access**: opens Picky in a browser on this Mac and pairs your phone to the same sessions. See [15](#15-web-access-this-macs-browser-and-your-phone).
 - **Settings**: grouped controls for Picky's behavior, accounts, local data, and diagnostics.
 
 Closing a guide, plugin detail, or settings confirmation returns keyboard focus to the control that opened it. With macOS **Keyboard navigation** enabled, press Space to activate that control again.
@@ -96,7 +97,7 @@ A successful install, update, or removal applies to main Picky and every live Pi
 
 Hub checks npm for newer versions of installed curated plugins when the Plugins page or Dashboard opens, and checks again on a later visit once the previous result is more than 10 minutes old. When an installed, non-pinned plugin has an update available, **Update** appears with its other actions. Plugins with updates, including bundled plugins replaced by a Picky update, are also listed together above the Plugins tabs with their current and new versions. **Update All** updates them one at a time; a failed update stays listed with its error and **Retry** while the rest continue.
 
-Memory Layer and Cron installs and updates are temporarily blocked while the safe migration is validated; their update offers are hidden. Existing installations are not automatically changed. Plugin reload alone does not replace every Picky or external Pi runtime. Before upgrading these packages outside Hub, stop old writers and active scheduled work, back up memory/session/cron data, and follow the [extension safety cutover](extension-safety-cutover.md). Do not assume restarting Picky also stops external Pi terminals.
+Memory Layer and Cron install and update from the registry's latest release, which includes the memory/cron safety fixes (Memory Layer 0.6.0 and Cron 0.4.0 or later). Picky holds an install or update only when it is pinned to an older version. Removal and explicit setup stay available. Existing installations are not automatically changed. Plugin reload alone does not replace every Picky or external Pi runtime. Before upgrading these packages outside Hub, stop old writers and active scheduled work, back up memory/session/cron data, and follow the [extension safety cutover](extension-safety-cutover.md). Do not assume restarting Picky also stops external Pi terminals.
 
 With the patched Cron extension, PTT pauses delivery to the main session until replacement input is accepted. If recording is cancelled without sending input, delivery remains paused until the next input or session replacement. Duplicated or handed-off Pickles get independent Pi session identities; existing session files are not rewritten automatically.
 

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { usageSampleTokens, type PickleStatisticsRecord, type PickleUsageSample } from "../domain/pickle-statistics.js";
 
 /**
- * Statistics outlive their Pickles. Archived Pickles are purged after a week
+ * Statistics outlive their Pickles. Archived Pickles are purged after 30 days
  * and users can delete Pickles, but streaks, badges, totals, and all-time
  * records must not roll back when that happens. The history keeps the last
  * known record and owned usage of every Pickle the service has seen.

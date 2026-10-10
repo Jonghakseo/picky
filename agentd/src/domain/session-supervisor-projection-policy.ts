@@ -336,7 +336,7 @@ export function projectMainReplyMetadata(
   };
 }
 
-export const ARCHIVED_SESSION_RETENTION_DAYS = 7;
+export const ARCHIVED_SESSION_RETENTION_DAYS = 30;
 const ARCHIVED_SESSION_RETENTION_MS = ARCHIVED_SESSION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 export function shouldPurgeArchivedSession(

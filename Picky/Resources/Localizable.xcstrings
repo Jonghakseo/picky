@@ -12085,6 +12085,40 @@
         }
       }
     },
+    "settings.pickle.archiveAutoDelete.note": {
+      "comment": "Pickle settings: explains when automatic deletion of old archived Pickles runs and that it cannot be undone.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When Picky starts, finished Pickles archived more than 30 days ago are permanently deleted. This cannot be undone."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky를 시작할 때 보관한 지 30일이 지난 완료된 Pickle을 영구 삭제해요. 삭제하면 되돌릴 수 없어요."
+          }
+        }
+      }
+    },
+    "settings.pickle.archiveAutoDelete.toggle": {
+      "comment": "Pickle settings: switch that permanently deletes Pickles archived more than 30 days ago.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete archived Pickles after 30 days"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "30일 지난 보관 Pickle 자동 삭제"
+          }
+        }
+      }
+    },
     "settings.pickle.gitChipActions.branchLabel": {
       "localizations": {
         "en": {

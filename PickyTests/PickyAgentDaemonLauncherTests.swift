@@ -397,6 +397,24 @@ struct PickyAgentDaemonLauncherTests {
         launcher.stop()
     }
 
+    @Test func archivedPickleAutoDeleteEnvironmentFollowsTheCurrentSettingOnEveryLaunch() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19036, token: "token-123", appSupportRoot: temp, defaultCwd: "/tmp", runtime: nil,
+            workingDirectory: temp, executableURL: URL(fileURLWithPath: "/usr/bin/env"), arguments: ["pnpm", "dev"]
+        )
+        #expect(configuration.environment["PICKY_ARCHIVED_PICKLE_AUTO_DELETE"] == "1", "enabled by default")
+
+        let store = PickySettingsStore(appSupportRoot: temp)
+        var settings = store.load()
+        settings.archivedPickleAutoDeleteEnabled = false
+        try store.save(settings)
+
+        // The same configuration value must not reuse a stale snapshot after the user turns it off.
+        #expect(configuration.environment["PICKY_ARCHIVED_PICKLE_AUTO_DELETE"] == "0")
+    }
+
     @Test func portConflictOnEveryAttemptIsReportedAsPortInUse() async throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         try makeAgentdPackage(at: temp)

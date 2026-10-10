@@ -759,6 +759,10 @@ struct PickySettings: Codable, Equatable {
     /// recovery dialog when the UI becomes unresponsive. Off-switch is
     /// exposed for developers/QA who deliberately freeze the UI to debug.
     var mainThreadWatchdogEnabled: Bool
+    /// When true (default) agentd permanently deletes finished Pickles archived
+    /// more than 30 days ago each time it starts. Passed to every daemon launch
+    /// as `PICKY_ARCHIVED_PICKLE_AUTO_DELETE`.
+    var archivedPickleAutoDeleteEnabled: Bool
     /// User-facing chrome language. `.system` follows whatever language macOS
     /// surfaces via `Locale.preferredLanguages`; the explicit cases pin the
     /// app even when the OS is set to something else. Adding a language is
@@ -880,6 +884,7 @@ struct PickySettings: Codable, Equatable {
         updatesAutomaticChecksEnabled: Bool = true,
         shellCommandAutoInstallOptedOut: Bool = false,
         mainThreadWatchdogEnabled: Bool = true,
+        archivedPickleAutoDeleteEnabled: Bool = true,
         appLanguage: PickyLanguage = .system,
         recentPickleCwds: [String] = [],
         pinnedPickleCwds: [String] = [],
@@ -956,6 +961,7 @@ struct PickySettings: Codable, Equatable {
         self.updatesAutomaticChecksEnabled = updatesAutomaticChecksEnabled
         self.shellCommandAutoInstallOptedOut = shellCommandAutoInstallOptedOut
         self.mainThreadWatchdogEnabled = mainThreadWatchdogEnabled
+        self.archivedPickleAutoDeleteEnabled = archivedPickleAutoDeleteEnabled
         self.appLanguage = appLanguage
         let normalizedPinnedPickleCwds = PickySettings.normalizedPinnedPickleCwds(pinnedPickleCwds)
         self.pinnedPickleCwds = normalizedPinnedPickleCwds
@@ -1055,6 +1061,7 @@ struct PickySettings: Codable, Equatable {
             updatesAutomaticChecksEnabled: true,
             shellCommandAutoInstallOptedOut: false,
             mainThreadWatchdogEnabled: true,
+            archivedPickleAutoDeleteEnabled: true,
             appLanguage: .system,
             recentPickleCwds: [],
             pinnedPickleCwds: [],
@@ -1184,6 +1191,7 @@ struct PickySettings: Codable, Equatable {
         case updatesAutomaticChecksEnabled
         case shellCommandAutoInstallOptedOut
         case mainThreadWatchdogEnabled
+        case archivedPickleAutoDeleteEnabled
         case appLanguage
         case recentPickleCwds
         case pinnedPickleCwds
@@ -1270,6 +1278,7 @@ struct PickySettings: Codable, Equatable {
         // Settings to flip this to true.
         shellCommandAutoInstallOptedOut = try container.decodeIfPresent(Bool.self, forKey: .shellCommandAutoInstallOptedOut) ?? defaults.shellCommandAutoInstallOptedOut
         mainThreadWatchdogEnabled = try container.decodeIfPresent(Bool.self, forKey: .mainThreadWatchdogEnabled) ?? defaults.mainThreadWatchdogEnabled
+        archivedPickleAutoDeleteEnabled = try container.decodeIfPresent(Bool.self, forKey: .archivedPickleAutoDeleteEnabled) ?? defaults.archivedPickleAutoDeleteEnabled
         // Existing installs that predate localization decode as `.system` —
         // they'll follow whatever language they were already comfortable with
         // (the OS preference) without any visible change.

@@ -376,7 +376,7 @@ Examples:
 program
   .command("pickle-archive <session-id>")
   .addOption(new Option("--archive-mode <mode>", "Required while work remains: continue running, or stop before archiving").choices(["continue", "stopThenArchive"]))
-  .description("Archive a Pickle session so it is hidden from the Picky dock. Archived terminal Pickles follow Picky's 7-day retention window.")
+  .description("Archive a Pickle session so it is hidden from the Picky dock. Archived terminal Pickles are deleted after 30 days unless automatic deletion is turned off in Picky settings.")
   .option("--json", "Emit the archive-state event JSON to stdout")
   .addHelpText("after", `
 Examples:

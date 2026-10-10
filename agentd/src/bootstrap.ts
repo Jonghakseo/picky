@@ -54,6 +54,8 @@ export interface AgentdConfig {
   pickleModelPattern?: string;
   useMockRuntime: boolean;
   asyncTaskRollout?: "on" | "drain";
+  /** Auto-delete archived Pickles past the retention window on load. Off only when the app sends "0". */
+  purgeStaleArchivedSessions?: boolean;
   sessionId?: string;
   sessionCwd?: string;
   primaryUrl?: string;
@@ -111,6 +113,7 @@ export function parseAgentdConfig(env: NodeJS.ProcessEnv): AgentdConfig {
     pickleModelPattern: env.PICKY_PICKLE_MODEL?.trim() || undefined,
     useMockRuntime: env.PICKY_AGENTD_RUNTIME === "mock",
     asyncTaskRollout: parseAsyncTaskRollout(env.PICKY_ASYNC_TASK_ROLLOUT),
+    purgeStaleArchivedSessions: env.PICKY_ARCHIVED_PICKLE_AUTO_DELETE !== "0",
     sessionId,
     sessionCwd,
     primaryUrl: env.PICKY_AGENTD_PRIMARY_URL?.trim() || undefined,
@@ -232,6 +235,7 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
     taskRouter: config.useMockRuntime ? new ConservativeMockTaskRouter() : undefined,
     mainRuntime,
     sessionIdFactory,
+    purgeStaleArchivedSessions: config.purgeStaleArchivedSessions,
     enableAsyncTasksForSession: (id) => canHostAsyncTasks(config, supervisorRef, hostedAsync, id),
     forwardPickleCompletionToPrimary,
     mainCustomToolsBuilder,

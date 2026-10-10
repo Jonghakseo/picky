@@ -396,6 +396,7 @@ Permanently deleting archives:
 
 - Each row in the archived list has its own **Delete** button with a 4-second confirm.
 - The list header also has a **Delete all** button (visible only when the archive is non-empty) that opens a confirmation alert and purges every archived Pickle from both Picky and the local agent's session store in one shot. The action cannot be undone.
+- **Delete archived Pickles after 30 days** (Hub → Settings → Pickles and workspace, on by default): each time Picky starts, finished Pickles archived more than 30 days ago are permanently deleted. Turn it off to keep archives until you delete them yourself. The change applies the next time Picky starts.
 
 ## 8. Pickle conversation card
 

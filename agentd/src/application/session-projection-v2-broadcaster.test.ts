@@ -122,7 +122,7 @@ describe("SessionProjectionV2Broadcaster", () => {
   it("excludes archived sessions purged during supervisor load from completion", async () => {
     const directory = await mkdtemp(join(tmpdir(), "picky-projection-bootstrap-purge-"));
     const store = new SessionStore(directory);
-    const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1_000).toISOString();
+    const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000).toISOString();
     await store.save({
       ...session("expired-archived-session"),
       status: "completed",

@@ -32,6 +32,9 @@ export interface SessionSupervisorOptions {
   // daemons (per-Pickle agentd plan §3.2) override this with a single-use factory that returns
   // the env-supplied PICKY_AGENTD_SESSION_ID so the scoped SessionStore accepts the first save.
   sessionIdFactory?: () => string;
+  // Deletes archived terminal Pickles older than ARCHIVED_SESSION_RETENTION_DAYS during load.
+  // Defaults to true; the app passes false when the user turns the setting off.
+  purgeStaleArchivedSessions?: boolean;
   // Defaults to 1s; tests may lower it to avoid waiting on real-time intervals.
   userBashLiveUpdateIntervalMs?: number;
   // Idle window before a threshold-triggered in-place main compaction runs. Defaults to

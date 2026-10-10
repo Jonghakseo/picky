@@ -312,7 +312,11 @@ export class SessionSupervisor extends EventEmitter {
     }
     // Run after Pickle sessions are hydrated so the carried summary can reference them.
     await this.mainAgent.rolloverMainAgentForRestart();
-    await this.purgeStaleArchivedSessions();
+    if (this.options.purgeStaleArchivedSessions === false) {
+      logAgentd("archived session purge disabled", { retentionDays: ARCHIVED_SESSION_RETENTION_DAYS });
+    } else {
+      await this.purgeStaleArchivedSessions();
+    }
   }
 
   private async purgeStaleArchivedSessions(now: number = Date.now()): Promise<void> {

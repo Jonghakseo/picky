@@ -8794,7 +8794,7 @@ describe("SessionSupervisor archived session purge", () => {
   const purge = (sup: SessionSupervisor, now: number) =>
     (sup as unknown as { purgeStaleArchivedSessions: (n: number) => Promise<void> }).purgeStaleArchivedSessions(now);
 
-  it("deletes archived terminal sessions older than 7 days", async () => {
+  it("deletes archived terminal sessions older than 30 days", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-purge-test-"));
     const store = new SessionStore(dir);
     await store.save(baseSession({
@@ -8805,21 +8805,21 @@ describe("SessionSupervisor archived session purge", () => {
     }));
     const supervisor = new SessionSupervisor(new MockRuntime(), store);
     await supervisor.load();
-    const now = new Date("2026-01-09T00:00:00.000Z").getTime();
+    const now = new Date("2026-02-01T00:00:00.000Z").getTime();
     await purge(supervisor, now);
     expect(supervisor.get("old-archived")).toBeUndefined();
     const reloaded = await store.loadAll();
     expect(reloaded.find((s) => s.id === "old-archived")).toBeUndefined();
   });
 
-  it("retains archived terminal sessions within 7 days", async () => {
+  it("retains archived terminal sessions within 30 days", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-purge-test-"));
     const store = new SessionStore(dir);
     const now = Date.now();
     await store.save(baseSession({
       id: "young-archived",
       archived: true,
-      archivedAt: new Date(now - 4 * 24 * 60 * 60 * 1000).toISOString(),
+      archivedAt: new Date(now - 20 * 24 * 60 * 60 * 1000).toISOString(),
     }));
     const supervisor = new SessionSupervisor(new MockRuntime(), store);
     await supervisor.load();
@@ -8851,12 +8851,12 @@ describe("SessionSupervisor archived session purge", () => {
     }));
     const supervisor = new SessionSupervisor(new MockRuntime(), store);
     await supervisor.load();
-    const now = new Date("2026-01-09T00:00:00.000Z").getTime();
+    const now = new Date("2026-02-01T00:00:00.000Z").getTime();
     await purge(supervisor, now);
     expect(supervisor.get("legacy")).toBeUndefined();
   });
 
-  it("deletes archived blocked sessions older than 7 days", async () => {
+  it("deletes archived blocked sessions older than 30 days", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-purge-test-"));
     const store = new SessionStore(dir);
     await store.save(baseSession({
@@ -8867,7 +8867,7 @@ describe("SessionSupervisor archived session purge", () => {
     }));
     const supervisor = new SessionSupervisor(new MockRuntime(), store);
     await supervisor.load();
-    const now = new Date("2026-01-09T00:00:00.000Z").getTime();
+    const now = new Date("2026-02-01T00:00:00.000Z").getTime();
     await purge(supervisor, now);
     expect(supervisor.get("old-blocked")).toBeUndefined();
   });
@@ -8875,7 +8875,7 @@ describe("SessionSupervisor archived session purge", () => {
   it("purges stale archived sessions automatically during load", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-purge-test-"));
     const store = new SessionStore(dir);
-    const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+    const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
     await store.save(baseSession({
       id: "auto-purged",
       archived: true,
@@ -8885,6 +8885,17 @@ describe("SessionSupervisor archived session purge", () => {
     const supervisor = new SessionSupervisor(new MockRuntime(), store);
     await supervisor.load();
     expect(supervisor.get("auto-purged")).toBeUndefined();
+  });
+
+  it("keeps stale archived sessions on load when automatic deletion is off", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-purge-test-"));
+    const store = new SessionStore(dir);
+    const old = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    await store.save(baseSession({ id: "kept", archived: true, archivedAt: old, updatedAt: old }));
+    const supervisor = new SessionSupervisor(new MockRuntime(), store, { purgeStaleArchivedSessions: false });
+    await supervisor.load();
+    expect(supervisor.get("kept")).toBeDefined();
+    expect((await store.loadAll()).some((s) => s.id === "kept")).toBe(true);
   });
 
   it("skips sessions with invalid ids without disrupting other purges", async () => {
@@ -8902,7 +8913,7 @@ describe("SessionSupervisor archived session purge", () => {
       "",
       baseSession({ id: "", archived: true, archivedAt: new Date(archivedAt).toISOString() }),
     );
-    const now = archivedAt + 8 * 24 * 60 * 60 * 1000;
+    const now = archivedAt + 31 * 24 * 60 * 60 * 1000;
     await purge(supervisor, now);
     expect(supervisor.get("valid-old")).toBeUndefined();
     expect((supervisor as unknown as { sessions: Map<string, PickyAgentSession> }).sessions.has("")).toBe(true);

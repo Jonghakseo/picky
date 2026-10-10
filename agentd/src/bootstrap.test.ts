@@ -79,6 +79,12 @@ describe("parseAgentdConfig", () => {
     expect(config.sessionCwd).toBeUndefined();
   });
 
+  it("enables archived Pickle auto-delete unless the app passes PICKY_ARCHIVED_PICKLE_AUTO_DELETE=0", () => {
+    expect(parseAgentdConfig(envFor()).purgeStaleArchivedSessions).toBe(true);
+    expect(parseAgentdConfig(envFor({ PICKY_ARCHIVED_PICKLE_AUTO_DELETE: "1" })).purgeStaleArchivedSessions).toBe(true);
+    expect(parseAgentdConfig(envFor({ PICKY_ARCHIVED_PICKLE_AUTO_DELETE: "0" })).purgeStaleArchivedSessions).toBe(false);
+  });
+
   it("requires sessionId and sessionCwd in child mode", () => {
     expect(() => parseAgentdConfig(envFor({ PICKY_AGENTD_MODE: "child" }))).toThrow(/PICKY_AGENTD_SESSION_ID/);
     expect(() => parseAgentdConfig(envFor({ PICKY_AGENTD_MODE: "child", PICKY_AGENTD_SESSION_ID: "abc" }))).toThrow(/PICKY_AGENTD_SESSION_CWD/);

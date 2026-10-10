@@ -365,6 +365,11 @@ struct CompanionPanelSettingsView: View {
 
                 gitChipActionsGroup
 
+                Divider()
+                    .background(DS.Colors.borderSubtle.opacity(0.3))
+
+                archivedPickleAutoDeleteToggle
+
                 if !archiveMembership.archivedSessionIDs.isEmpty {
                     Divider()
                         .background(DS.Colors.borderSubtle.opacity(0.3))
@@ -372,6 +377,23 @@ struct CompanionPanelSettingsView: View {
                     archivedSessionsDisclosure
                 }
             }
+        }
+    }
+
+    /// agentd reads this on its next launch, which is also when the purge runs.
+    private var archivedPickleAutoDeleteToggle: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space1) {
+            toggleRow(
+                "settings.pickle.archiveAutoDelete.toggle",
+                isOn: $viewModel.settings.archivedPickleAutoDeleteEnabled,
+                divider: false
+            )
+            .onChange(of: viewModel.settings.archivedPickleAutoDeleteEnabled) { _, _ in saveImmediately(for: .pickle) }
+            Text("settings.pickle.archiveAutoDelete.note")
+                .font(PickyHUDTypography.supporting)
+                .foregroundColor(supportingTextColor)
+                .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
         }
     }
 

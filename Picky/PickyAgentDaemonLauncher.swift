@@ -315,7 +315,16 @@ struct PickyAgentDaemonConfiguration: Equatable {
             applyChildEnvironment(to: &env, sessionId: sessionId, sessionCwd: sessionCwd, primaryUrl: primaryUrl)
         }
         if let runtime { env["PICKY_AGENTD_RUNTIME"] = runtime }
+        applyArchivedPickleAutoDeleteEnvironment(to: &env)
         return env
+    }
+
+    /// Deletion is irreversible, so read the current setting on every launch instead of
+    /// capturing it in this configuration: the primary configuration is built once at app
+    /// launch, and a daemon restart after the user turned the setting off must not purge.
+    private func applyArchivedPickleAutoDeleteEnvironment(to env: inout [String: String]) {
+        let enabled = PickySettingsStore(appSupportRoot: appSupportRoot).load().archivedPickleAutoDeleteEnabled
+        env["PICKY_ARCHIVED_PICKLE_AUTO_DELETE"] = enabled ? "1" : "0"
     }
 
     private func baseLaunchEnvironment() -> [String: String] {

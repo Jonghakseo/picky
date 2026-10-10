@@ -48,9 +48,12 @@ enum PickyRemoteOverlayBuilder {
         let knownIDs = activeSet.union(archivedSet)
 
         let groups = dockLayout.groups.prefix(Limits.groups).map { group in
-            PickyRemoteOverlayGroup(
+            // The wire name stays locale-independent; the Mac's localized
+            // `displayName` fallback is for Mac UI only.
+            let trimmedName = group.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            return PickyRemoteOverlayGroup(
                 id: group.id,
-                name: String(group.displayName.prefix(Limits.groupNameCharacters)),
+                name: String((trimmedName.isEmpty ? "Untitled" : trimmedName).prefix(Limits.groupNameCharacters)),
                 color: String(describing: group.color),
                 memberIds: Array(
                     deduplicated(group.memberSessionIDs)

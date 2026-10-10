@@ -169,8 +169,8 @@ struct PickyUserBubbleHeader: Equatable {
 
         var metaText: String {
             switch self {
-            case .skill: "Skill"
-            case .command: "Command"
+            case .skill: L10n.t("hud.userBubble.meta.skill")
+            case .command: L10n.t("hud.userBubble.meta.command")
             case .failedCommand: L10n.t("hud.command.failed")
             }
         }

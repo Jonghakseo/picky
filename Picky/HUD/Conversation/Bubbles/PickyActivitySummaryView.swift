@@ -165,7 +165,7 @@ struct PickyContextUsageChip: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Text("ctx")
+            Text(verbatim: L10n.t("hud.context.usage.chip"))
             ContextUsageBar(progress: display.fraction, color: display.barColor)
                 .frame(width: 24, height: 5)
             Text(display.label)
@@ -175,6 +175,8 @@ struct PickyContextUsageChip: View {
         .foregroundColor(display.textColor.opacity(0.9))
         .lineLimit(1)
         .help(display.tooltip)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L10n.t("hud.context.usage.accessibilityLabel", display.label))
     }
 }
 

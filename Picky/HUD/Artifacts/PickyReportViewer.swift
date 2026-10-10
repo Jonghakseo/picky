@@ -1263,7 +1263,7 @@ struct PickyReportViewerWindowView: View {
             .accessibilityLabel(L10n.t("hud.report.search"))
             Button(action: copyMarkdownToPasteboard) {
                 Label(
-                    didCopyMarkdown ? "Copied" : "Copy",
+                    didCopyMarkdown ? L10n.t("hud.report.copied") : L10n.t("hud.report.copy"),
                     systemImage: didCopyMarkdown ? "checkmark" : "doc.on.doc"
                 )
                 .labelStyle(.titleAndIcon)

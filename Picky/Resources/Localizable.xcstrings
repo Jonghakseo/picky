@@ -34403,6 +34403,227 @@
           }
         }
       }
+    },
+    "hud.context.remote.push.help": {
+      "comment": "%lld is the number of local commits ahead of upstream.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "git push (%lld ahead of upstream)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "git push (업스트림보다 커밋 %lld개 앞서 있어요)"
+          }
+        }
+      }
+    },
+    "hud.context.remote.pull.help": {
+      "comment": "%lld is the number of upstream commits not yet pulled.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "git pull (%lld behind upstream)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "git pull (업스트림보다 커밋 %lld개 뒤처져 있어요)"
+          }
+        }
+      }
+    },
+    "hud.context.remote.push.running": {
+      "comment": "Shown while git push runs from the context chip.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pushing…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "push 실행 중…"
+          }
+        }
+      }
+    },
+    "hud.context.remote.pull.running": {
+      "comment": "Shown while git pull runs from the context chip.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulling…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pull 실행 중…"
+          }
+        }
+      }
+    },
+    "hud.userBubble.meta.skill": {
+      "comment": "Meta label on a user message that invoked a skill.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skill"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스킬"
+          }
+        }
+      }
+    },
+    "hud.userBubble.meta.command": {
+      "comment": "Meta label on a user message that ran a slash command.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Command"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명령"
+          }
+        }
+      }
+    },
+    "hud.report.copy": {
+      "comment": "Report viewer button that copies the report Markdown.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복사"
+          }
+        }
+      }
+    },
+    "hud.report.copied": {
+      "comment": "Report viewer button label right after copying.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copied"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복사됨"
+          }
+        }
+      }
+    },
+    "hud.localTerminal.started": {
+      "comment": "%1$@ is the shell name such as zsh; %2$@ is the abbreviated working folder.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ in %2$@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@에서 %1$@ 실행 중"
+          }
+        }
+      }
+    },
+    "hud.localTerminal.hide.hint": {
+      "comment": "Keyboard hint in the local terminal header.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘E hide"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘E 숨기기"
+          }
+        }
+      }
+    },
+    "hud.context.usage.chip": {
+      "comment": "Short label before the context usage bar in the activity chip.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Context"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컨텍스트"
+          }
+        }
+      }
+    },
+    "hud.context.usage.accessibilityLabel": {
+      "comment": "%@ is the usage percentage, for example 42%.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Context usage %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컨텍스트 사용량 %@"
+          }
+        }
+      }
+    },
+    "dock.group.untitled": {
+      "comment": "Display fallback for a Dock group with an empty name.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Untitled Group"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름 없는 그룹"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

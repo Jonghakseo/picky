@@ -124,7 +124,7 @@ struct PickyDockGroup: Codable, Equatable, Identifiable {
     /// before they typed anything).
     var displayName: String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Untitled" : trimmed
+        return trimmed.isEmpty ? L10n.t("dock.group.untitled") : trimmed
     }
 }
 

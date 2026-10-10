@@ -179,7 +179,7 @@ final class PickyShellTerminalModel: ObservableObject, PickyTerminalProcessEvent
         didStartProcess = true
         let shell = PickyShellTerminalCommand.resolvedShell()
         let workingDirectory = PickyShellTerminalCommand.workingDirectory(from: cwd)
-        statusText = "\((shell as NSString).lastPathComponent) in \(Self.compactPath(workingDirectory))"
+        statusText = L10n.t("hud.localTerminal.started", (shell as NSString).lastPathComponent, Self.compactPath(workingDirectory))
         terminalView.startPickyProcess(
             executable: shell,
             args: [],
@@ -285,7 +285,7 @@ private struct PickySessionExtendedTerminalContentView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 6)
-            Text(verbatim: "⌘E hide")
+            Text(verbatim: L10n.t("hud.localTerminal.hide.hint"))
                 .font(PickyHUDTypography.minimumMedium)
                 .foregroundColor(DS.Colors.textTertiary)
         }

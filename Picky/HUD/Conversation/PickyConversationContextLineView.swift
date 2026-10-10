@@ -1147,13 +1147,13 @@ struct PickyConversationContextLineView: View {
 
     private func remoteActionLabel(_ action: GitRemoteAction, count: Int, isLoading: Bool) -> String {
         if isLoading {
-            return action == .push ? "Pushing…" : "Pulling…"
+            return L10n.t(action == .push ? "hud.context.remote.push.running" : "hud.context.remote.pull.running")
         }
         switch action {
         case .push:
-            return "git push (\(count) ahead of upstream)"
+            return L10n.t("hud.context.remote.push.help", Int64(count))
         case .pull:
-            return "git pull (\(count) behind upstream)"
+            return L10n.t("hud.context.remote.pull.help", Int64(count))
         }
     }
 

@@ -915,10 +915,14 @@ async function verifyQueuedRegistration(mode: "continue" | undefined, f: Awaited
   } else {
     await vi.waitFor(() => expect(existsSync(join(f.root, "spawns"))).toBe(true), { timeout: 7000 });
     const ownedChild = await f.child;
-    const active = await f.store.loadReadOnly("session-sdk");
-    expect(active).toMatchObject({ archived: true, asyncArchiveIntentId: requestId, asyncControl: { admissionState: "open" } });
-    expect(active?.asyncTasks?.some(task => task.registration === "spawned" && task.presence === "active")).toBe(true);
-    expect(active?.asyncWorkSummary?.canReleaseRuntime).toBe(false);
+    // The child writes the spawn marker before the host reports it, so the persisted
+    // "spawned" registration can land a moment later.
+    await vi.waitFor(async () => {
+      const active = await f.store.loadReadOnly("session-sdk");
+      expect(active).toMatchObject({ archived: true, asyncArchiveIntentId: requestId, asyncControl: { admissionState: "open" } });
+      expect(active?.asyncTasks?.some(task => task.registration === "spawned" && task.presence === "active")).toBe(true);
+      expect(active?.asyncWorkSummary?.canReleaseRuntime).toBe(false);
+    }, { timeout: 7000 });
     const owner = f.supervisor.asyncControls.context("session-sdk");
     const command: Extract<AsyncTaskCommand, { type: "prepareRuntimeRelease" }> = { type: "prepareRuntimeRelease", requestId: "w5-release", sessionId: "session-sdk", daemonInstanceId: owner.daemonInstanceId, runtimeInstanceId: owner.runtimeInstanceId!, workRevision: owner.workRevision, controlGeneration: owner.controlGeneration, archiveIntentId: requestId, childGeneration: 1 };
     const releaseAttempt = await f.supervisor.executeAsyncTaskCommand(command);

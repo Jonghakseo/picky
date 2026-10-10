@@ -208,8 +208,10 @@ final class PickyAgentDaemonPool: ObservableObject {
                     guard let self else { continuation.resume(throwing: CancellationError()); return }
                     let launcher = self.factory.makeLauncher(
                         configuration: childConfig,
+                        // The launcher already batches child output onto the main actor, so
+                        // lines arrive here on the main actor and need no per-line hop.
                         stdoutLineObserver: { [weak self] line in
-                            Task { @MainActor in self?.handleChildStdoutLine(sessionId: sessionId, line: line) }
+                            self?.handleChildStdoutLine(sessionId: sessionId, line: line)
                         }
                     )
                     self.nextChildGeneration += 1

@@ -233,7 +233,9 @@ final class PickyRemoteGatewayLauncher {
     private var consecutiveFailures = 0
     private var stdoutBuffer: [UInt8] = []
     private var stderrBuffer: [UInt8] = []
-    private var logFileSizes: [String: Int64] = [:]
+    /// One open writer per log file for the launcher's lifetime; the size cap is judged from
+    /// the file itself (see `PickyRotatingLogFile`).
+    private var logFiles: [String: PickyRotatingLogFile] = [:]
     private var launchGeneration = 0
     private var desiredPort: Int?
     private var desiredToken: String?
@@ -348,15 +350,19 @@ final class PickyRemoteGatewayLauncher {
         process.standardError = stderrPipe
         launchGeneration &+= 1
         let generation = launchGeneration
-        stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            Task { @MainActor [weak self] in self?.handleStdout(data, generation: generation) }
+        // Readability handlers run on a background queue; the relay batches their output onto
+        // the main actor instead of creating one Task per chunk.
+        let stdoutRelay = PickyDaemonOutputRelay { [weak self] data in
+            self?.handleStdout(data, generation: generation)
         }
-        stderrPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            Task { @MainActor [weak self] in self?.handleStderr(data, generation: generation) }
+        let stderrRelay = PickyDaemonOutputRelay { [weak self] data in
+            self?.handleStderr(data, generation: generation)
+        }
+        stdoutPipe.fileHandleForReading.readabilityHandler = { @Sendable handle in
+            stdoutRelay.receive(handle.availableData)
+        }
+        stderrPipe.fileHandleForReading.readabilityHandler = { @Sendable handle in
+            stderrRelay.receive(handle.availableData)
         }
         self.stdoutPipe = stdoutPipe
         self.stderrPipe = stderrPipe
@@ -452,37 +458,18 @@ final class PickyRemoteGatewayLauncher {
     // MARK: - Logs
 
     private func append(_ data: Data, to fileName: String) {
-        guard !data.isEmpty else { return }
-        let url = logDirectory.appendingPathComponent(fileName)
-        rotateLogIfNeeded(url: url, fileName: fileName)
-        if !fileManager.fileExists(atPath: url.path) {
-            fileManager.createFile(atPath: url.path, contents: nil)
-        }
-        guard let handle = try? FileHandle(forWritingTo: url) else { return }
-        defer { try? handle.close() }
-        _ = try? handle.seekToEnd()
-        try? handle.write(contentsOf: data)
-        logFileSizes[fileName] = (logFileSizes[fileName] ?? 0) + Int64(data.count)
+        logFile(named: fileName).append(data)
     }
 
-    private func rotateLogIfNeeded(url: URL, fileName: String) {
-        if logFileSizes[fileName] == nil {
-            let attrs = try? fileManager.attributesOfItem(atPath: url.path)
-            logFileSizes[fileName] = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
-        }
-        guard (logFileSizes[fileName] ?? 0) >= Self.maxLogFileSize else { return }
-        let dir = url.deletingLastPathComponent()
-        try? fileManager.removeItem(at: dir.appendingPathComponent("\(fileName).\(Self.maxLogRotations)"))
-        for index in stride(from: Self.maxLogRotations - 1, through: 1, by: -1) {
-            let from = dir.appendingPathComponent("\(fileName).\(index)")
-            let to = dir.appendingPathComponent("\(fileName).\(index + 1)")
-            guard fileManager.fileExists(atPath: from.path) else { continue }
-            try? fileManager.removeItem(at: to)
-            try? fileManager.moveItem(at: from, to: to)
-        }
-        let firstBackup = dir.appendingPathComponent("\(fileName).1")
-        try? fileManager.removeItem(at: firstBackup)
-        try? fileManager.moveItem(at: url, to: firstBackup)
-        logFileSizes[fileName] = 0
+    private func logFile(named fileName: String) -> PickyRotatingLogFile {
+        if let existing = logFiles[fileName] { return existing }
+        let created = PickyRotatingLogFile(
+            url: logDirectory.appendingPathComponent(fileName),
+            maxSize: Self.maxLogFileSize,
+            maxRotations: Self.maxLogRotations,
+            fileManager: fileManager
+        )
+        logFiles[fileName] = created
+        return created
     }
 }

@@ -714,6 +714,11 @@ struct PATHPickyExecutableChecker: PickyExecutableChecking {
 @MainActor
 final class PickyAgentDaemonLauncher: ObservableObject {
     @Published private(set) var state: PickyDaemonLifecycleState = .stopped
+    /// Why the launcher stopped trying, once `state` has become a final `.failedToStart`
+    /// (node missing or too old, port taken, restart limit reached). `nil` while the daemon
+    /// is starting, running, or still being restarted; `start()` and `stop()` clear it. It is
+    /// set before `state` changes, so an observer of `state` always sees the matching cause.
+    @Published private(set) var terminalFailure: PickyDaemonTerminalFailure?
 
     let configuration: PickyAgentDaemonConfiguration
     private let runner: PickyProcessRunning
@@ -746,11 +751,15 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     private static let staleStatusFileAge: TimeInterval = 24 * 60 * 60
     private let maxLogFileSize: Int64
     private let maxLogRotations: Int
-    /// Cached current size per managed log file so we do not stat the file
-    /// on every byte written. Seeded lazily from the on-disk size on the
-    /// first append of each file and updated in-place afterwards; reset to 0
-    /// when the file is rotated.
-    private var logFileSizes: [String: Int64] = [:]
+    /// Log writers keep their file open for the launcher's lifetime and judge the size cap from
+    /// the file itself, so launchers that share `Logs/` (primary and per-Pickle children)
+    /// still keep each file under the cap.
+    private var logFiles: [String: PickyRotatingLogFile] = [:]
+    /// Consecutive restarts allowed before the launcher gives up. The counter resets after a
+    /// run that stayed up for `restartBackoffResetUptime`, so only a crash loop reaches it.
+    /// With the 1s doubling backoff, five restarts span about 31 seconds.
+    nonisolated static let defaultMaxRestartAttempts = 5
+    private let maxRestartAttempts: Int
     private var restartTask: Task<Void, Never>?
     private var attempts = 0
     private var intentionallyStopped = false
@@ -797,6 +806,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         stdoutLineObserver: ((String) -> Void)? = nil,
         maxLogFileSize: Int64 = PickyAgentDaemonLauncher.defaultMaxLogFileSize,
         maxLogRotations: Int = PickyAgentDaemonLauncher.defaultMaxLogRotations,
+        maxRestartAttempts: Int = PickyAgentDaemonLauncher.defaultMaxRestartAttempts,
         now: @escaping () -> Date = Date.init,
         restartSleep: @escaping (TimeInterval) async -> Void = { delay in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
@@ -811,6 +821,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         self.stdoutLineObserver = stdoutLineObserver
         self.maxLogFileSize = maxLogFileSize
         self.maxLogRotations = maxLogRotations
+        self.maxRestartAttempts = maxRestartAttempts
         self.now = now
         self.restartSleep = restartSleep
     }
@@ -839,6 +850,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         attempts = 0
         intentionallyStopped = false
         terminalLaunchFailureMessage = nil
+        terminalFailure = nil
         stderrDiagnosticBuffer = ""
         clearLastFailureClassification()
         purgeStaleChildSessionStatusFiles()
@@ -867,6 +879,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
 
     private func prepareForIntentionalStop() {
         intentionallyStopped = true
+        terminalFailure = nil
         restartTask?.cancel()
         restartTask = nil
     }
@@ -886,10 +899,14 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             }
             try fileManager.createDirectory(at: logDirectory, withIntermediateDirectories: true)
             try preflightConfiguration()
+            // The runner reads pipes on a background queue. The relay is the only thing those
+            // closures touch; it moves the bytes onto the main actor in batches.
+            let stdoutRelay = PickyDaemonOutputRelay { [weak self] data in self?.appendStdout(data) }
+            let stderrRelay = PickyDaemonOutputRelay { [weak self] data in self?.appendStderr(data) }
             try runner.launch(
                 configuration: configuration,
-                stdout: { [weak self] data in self?.appendStdout(data) },
-                stderr: { [weak self] data in self?.appendStderr(data) }
+                stdout: { @Sendable data in stdoutRelay.receive(data) },
+                stderr: { @Sendable data in stderrRelay.receive(data) }
             )
             liveProcessGeneration = generation
             if let terminalLaunchFailureMessage {
@@ -902,7 +919,11 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         } catch let error as PickyDaemonLaunchPreflightError {
             recordLastFailure(kind: error.diagnosticsKind)
             pickyDaemonLog("preflight failed kind=\(error.diagnosticsKind)")
-            updateState(.failedToStart(error.localizedDescription))
+            failTerminally(PickyDaemonTerminalFailure(
+                cause: error.failureCause,
+                message: error.localizedDescription,
+                restartAttempts: attempts
+            ))
         } catch {
             recordLastFailure(kind: "launchError")
             pickyDaemonLog("launch failed")
@@ -910,7 +931,11 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             // in child role surfaces as .failedToStart so the pool's spawn promise rejects;
             // primary daemons keep the historical backoff-restart loop.
             if case .child = configuration.role {
-                updateState(.failedToStart(error.localizedDescription))
+                failTerminally(PickyDaemonTerminalFailure(
+                    cause: .launchFailed,
+                    message: error.localizedDescription,
+                    restartAttempts: attempts
+                ))
             } else {
                 scheduleRestart(afterExitCode: -1)
             }
@@ -1009,6 +1034,10 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     }
 
     private func scheduleRestart(afterExitCode exitCode: Int32) {
+        guard attempts < maxRestartAttempts else {
+            giveUpRestarting(afterExitCode: exitCode)
+            return
+        }
         attempts += 1
         let delay = min(pow(2.0, Double(attempts - 1)), 30.0)
         updateState(.restarting(attempt: attempts, delay: delay))
@@ -1020,6 +1049,29 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             guard !Task.isCancelled else { return }
             await MainActor.run { self?.launch() }
         }
+    }
+
+    /// Ends the restart loop. The daemon is not coming back on its own, so publish the final
+    /// failure instead of another `.restarting`; `start()` after `stop()` begins a fresh run.
+    private func giveUpRestarting(afterExitCode exitCode: Int32) {
+        restartTask?.cancel()
+        restartTask = nil
+        if lastFailureKind != "portConflict", lastFailureKind != "launchError" {
+            recordLastFailure(kind: "repeatedCrash")
+        }
+        let failure = PickyDaemonTerminalFailure.restartLimitReached(
+            attempts: attempts,
+            lastExitCode: exitCode == -1 ? nil : exitCode,
+            lastFailureKind: lastFailureKind,
+            lastFailurePort: lastFailurePort
+        )
+        pickyDaemonLog("restart limit reached attempts=\(attempts) cause=\(failure.cause.rawValue)")
+        failTerminally(failure)
+    }
+
+    private func failTerminally(_ failure: PickyDaemonTerminalFailure) {
+        terminalFailure = failure
+        updateState(.failedToStart(failure.message))
     }
 
     private func appendStderr(_ data: Data) {
@@ -1037,7 +1089,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         guard let message = Self.unsupportedNodeFailureMessage(from: stderrDiagnosticBuffer) else { return }
         terminalLaunchFailureMessage = message
         recordLastFailure(kind: "unsupportedNode")
-        updateState(.failedToStart(message))
+        failTerminally(PickyDaemonTerminalFailure(cause: .nodeUnsupported, message: message, restartAttempts: attempts))
     }
 
     private static func unsupportedNodeFailureMessage(from stderr: String) -> String? {
@@ -1095,52 +1147,19 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     }
 
     private func append(_ data: Data, to fileName: String) {
-        guard !data.isEmpty else { return }
-        let url = logDirectory.appendingPathComponent(fileName)
-        rotateLogIfNeeded(url: url, fileName: fileName)
-        if !fileManager.fileExists(atPath: url.path) {
-            fileManager.createFile(atPath: url.path, contents: nil)
-        }
-        guard let handle = try? FileHandle(forWritingTo: url) else { return }
-        defer { try? handle.close() }
-        _ = try? handle.seekToEnd()
-        try? handle.write(contentsOf: data)
-        logFileSizes[fileName] = (logFileSizes[fileName] ?? 0) + Int64(data.count)
+        logFile(named: fileName).append(data)
     }
 
-    /// Stat the file on the first call (seed the cached size) and rotate when
-    /// the live file is at or above `maxLogFileSize`. Backups shift
-    /// `<file>.N` -> `<file>.N+1`; the oldest beyond `maxLogRotations` is
-    /// removed. The cached size resets to 0 once the live file is rotated
-    /// out so the next append starts a fresh count.
-    private func rotateLogIfNeeded(url: URL, fileName: String) {
-        if logFileSizes[fileName] == nil {
-            if let attrs = try? fileManager.attributesOfItem(atPath: url.path),
-               let size = (attrs[.size] as? NSNumber)?.int64Value {
-                logFileSizes[fileName] = size
-            } else {
-                logFileSizes[fileName] = 0
-            }
-        }
-        guard maxLogFileSize > 0, (logFileSizes[fileName] ?? 0) >= maxLogFileSize else { return }
-        let dir = url.deletingLastPathComponent()
-        let oldestBackup = dir.appendingPathComponent("\(fileName).\(maxLogRotations)")
-        try? fileManager.removeItem(at: oldestBackup)
-        if maxLogRotations >= 1 {
-            for index in stride(from: maxLogRotations - 1, through: 1, by: -1) {
-                let from = dir.appendingPathComponent("\(fileName).\(index)")
-                let to = dir.appendingPathComponent("\(fileName).\(index + 1)")
-                guard fileManager.fileExists(atPath: from.path) else { continue }
-                try? fileManager.removeItem(at: to)
-                try? fileManager.moveItem(at: from, to: to)
-            }
-            let firstBackup = dir.appendingPathComponent("\(fileName).1")
-            try? fileManager.removeItem(at: firstBackup)
-            try? fileManager.moveItem(at: url, to: firstBackup)
-        } else {
-            try? fileManager.removeItem(at: url)
-        }
-        logFileSizes[fileName] = 0
+    private func logFile(named fileName: String) -> PickyRotatingLogFile {
+        if let existing = logFiles[fileName] { return existing }
+        let created = PickyRotatingLogFile(
+            url: logDirectory.appendingPathComponent(fileName),
+            maxSize: maxLogFileSize,
+            maxRotations: maxLogRotations,
+            fileManager: fileManager
+        )
+        logFiles[fileName] = created
+        return created
     }
 
     /// Delete `agentd.status.child-session-*.json` snapshots whose mtime is

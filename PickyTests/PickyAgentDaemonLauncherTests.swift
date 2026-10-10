@@ -353,6 +353,84 @@ struct PickyAgentDaemonLauncherTests {
         scheduler.resumeAll()
     }
 
+    @Test func stopsRestartingAfterRepeatedImmediateCrashesAndPublishesTheCause() async throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        try makeAgentdPackage(at: temp)
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19035, token: "token-123", appSupportRoot: temp, defaultCwd: "/tmp", runtime: nil,
+            workingDirectory: temp, executableURL: URL(fileURLWithPath: "/usr/bin/env"), arguments: ["pnpm", "dev"]
+        )
+        let scheduler = ManualRestartDelayScheduler()
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs"),
+            restartSleep: { await scheduler.sleep(for: $0) }
+        )
+        let limit = PickyAgentDaemonLauncher.defaultMaxRestartAttempts
+
+        launcher.start()
+        for _ in 0..<limit {
+            runner.crash(code: 9)
+            try await waitForState(of: launcher, matching: isRestarting)
+            #expect(launcher.terminalFailure == nil)
+            scheduler.resumeNext()
+            try await waitForState(of: launcher) { $0 == .running }
+        }
+        runner.crash(code: 9)
+        try await waitForState(of: launcher) { if case .failedToStart = $0 { true } else { false } }
+        await drainMainActorHops()
+
+        #expect(launcher.terminalFailure?.cause == .repeatedCrash)
+        #expect(launcher.terminalFailure?.lastExitCode == 9)
+        #expect(launcher.terminalFailure?.restartAttempts == limit)
+        #expect(runner.launchCount == limit + 1, "no launch after the limit was reached")
+        #expect(scheduler.requestedDelays.count == limit, "no restart is scheduled after giving up")
+
+        // An explicit stop/start begins a fresh run with the counter reset.
+        launcher.stop()
+        #expect(launcher.terminalFailure == nil)
+        launcher.start()
+        #expect(launcher.state == .running)
+        scheduler.resumeAll()
+        launcher.stop()
+    }
+
+    @Test func portConflictOnEveryAttemptIsReportedAsPortInUse() async throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        try makeAgentdPackage(at: temp)
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 17631, token: "token-123", appSupportRoot: temp, defaultCwd: "/tmp", runtime: nil,
+            workingDirectory: temp, executableURL: URL(fileURLWithPath: "/usr/bin/env"), arguments: ["pnpm", "dev"]
+        )
+        let scheduler = ManualRestartDelayScheduler()
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs"),
+            maxRestartAttempts: 1,
+            restartSleep: { await scheduler.sleep(for: $0) }
+        )
+        let conflict = "Error: listen EADDRINUSE: address already in use 127.0.0.1:17631\n"
+
+        launcher.start()
+        runner.emitStderr(conflict)
+        runner.crash(code: 1)
+        try await waitForState(of: launcher, matching: isRestarting)
+        scheduler.resumeNext()
+        try await waitForState(of: launcher) { $0 == .running }
+        runner.emitStderr(conflict)
+        runner.crash(code: 1)
+        try await waitForState(of: launcher) { if case .failedToStart = $0 { true } else { false } }
+
+        #expect(launcher.terminalFailure?.cause == .portInUse)
+        #expect(launcher.terminalFailure?.port == 17631)
+        launcher.stop()
+        scheduler.resumeAll()
+    }
+
     @Test func explicitRestartResetsCrashBackoffAttempts() async throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         try makeAgentdPackage(at: temp)

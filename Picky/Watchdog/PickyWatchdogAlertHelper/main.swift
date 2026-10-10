@@ -8,6 +8,12 @@
 //
 //  Usage:
 //    picky-watchdog-alert --parent-pid <pid> --sample-path <path>
+//        [--title <text>] [--message <text>]
+//        [--restart-label <text>] [--reveal-label <text>] [--ignore-label <text>]
+//
+//  This helper is a standalone executable and cannot read the app's string
+//  catalog, so the parent app passes the already-localized dialog text as
+//  arguments. Missing arguments fall back to English.
 //
 
 import AppKit
@@ -16,9 +22,26 @@ import Foundation
 
 // MARK: - Argument parsing
 
-private func parseArgs() -> (parentPid: pid_t, samplePath: String)? {
+private struct AlertText {
+    var title = "Picky is not responding"
+    /// Localized body supplied by the parent; `nil` falls back to the English
+    /// body built from the sample path.
+    var message: String?
+    var restartLabel = "Restart Picky"
+    var revealLabel = "Reveal Sample in Finder"
+    var ignoreLabel = "Ignore"
+}
+
+private struct ParsedArgs {
+    var parentPid: pid_t
+    var samplePath: String
+    var text: AlertText
+}
+
+private func parseArgs() -> ParsedArgs? {
     var parentPid: pid_t?
     var samplePath: String?
+    var text = AlertText()
     let args = CommandLine.arguments
     var i = 1
     while i < args.count {
@@ -35,13 +58,26 @@ private func parseArgs() -> (parentPid: pid_t, samplePath: String)? {
                 i += 2
                 continue
             }
+        case "--title", "--message", "--restart-label", "--reveal-label", "--ignore-label":
+            if i + 1 < args.count {
+                let value = args[i + 1]
+                switch args[i] {
+                case "--title": text.title = value
+                case "--message": text.message = value
+                case "--restart-label": text.restartLabel = value
+                case "--reveal-label": text.revealLabel = value
+                default: text.ignoreLabel = value
+                }
+                i += 2
+                continue
+            }
         default:
             break
         }
         i += 1
     }
     guard let parentPid, let samplePath else { return nil }
-    return (parentPid, samplePath)
+    return ParsedArgs(parentPid: parentPid, samplePath: samplePath, text: text)
 }
 
 // MARK: - Parent .app resolution
@@ -94,21 +130,21 @@ private func loadParentAppIcon(bundleURL: URL?, parentPid: pid_t) -> NSImage? {
     return nil
 }
 
-private func showAlert(samplePath: String, icon: NSImage?) -> AlertChoice {
+private func showAlert(samplePath: String, text: AlertText, icon: NSImage?) -> AlertChoice {
     let alert = NSAlert()
     alert.alertStyle = .warning
     if let icon { alert.icon = icon }
-    alert.messageText = "Picky is not responding"
-    alert.informativeText = """
+    alert.messageText = text.title
+    alert.informativeText = text.message ?? """
     The main thread was unresponsive for several seconds. A diagnostic sample was saved to:
 
     \(samplePath)
 
     Restarting Picky will recover the UI and restart the local agentd daemon. Persisted sessions will reconnect after launch.
     """
-    alert.addButton(withTitle: "Restart Picky")
-    alert.addButton(withTitle: "Reveal Sample in Finder")
-    alert.addButton(withTitle: "Ignore")
+    alert.addButton(withTitle: text.restartLabel)
+    alert.addButton(withTitle: text.revealLabel)
+    alert.addButton(withTitle: text.ignoreLabel)
     switch alert.runModal() {
     case .alertFirstButtonReturn: return .restart
     case .alertSecondButtonReturn: return .revealSample
@@ -252,7 +288,7 @@ let parentBundleURL = resolveParentBundleURL(parentPid: parsed.parentPid)
 let parentIcon = loadParentAppIcon(bundleURL: parentBundleURL, parentPid: parsed.parentPid)
 
 loop: while true {
-    switch showAlert(samplePath: parsed.samplePath, icon: parentIcon) {
+    switch showAlert(samplePath: parsed.samplePath, text: parsed.text, icon: parentIcon) {
     case .restart:
         restartParent(parentPid: parsed.parentPid, bundleURL: parentBundleURL)
         break loop

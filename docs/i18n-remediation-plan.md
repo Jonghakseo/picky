@@ -7,13 +7,31 @@ covers Picky-owned text that reaches users in the app, HUD, notifications,
 AppKit surfaces, speech, and `agentd` events rendered by the HUD.
 
 The catalog is **not** the current problem: `Picky/Resources/Localizable.xcstrings`
-has 850 keys as of 2026-08-30, complete `en` and `ko` translations, no empty
-values, and no format-placeholder mismatches. The gaps are code paths that bypass the catalog
-or use the system locale instead of Picky's selected locale.
+has 2,136 keys as of 2026-10-10, complete `en` and `ko` translations for every key
+(`scripts/check-localizations.sh` passes), and no other languages. The original
+audit counted 850 keys on 2026-08-30. The remaining gaps are code paths that
+bypass the catalog or use the system locale instead of Picky's selected locale.
 
 File paths were updated on 2026-10-06 after the folder reorganization (`32ec55c08`)
 and the Hub window replaced the companion panel. Line numbers still point at the
 2026-08-30 audit snapshot, so treat them as hints and re-locate the code with `rg`.
+
+## Status as of 2026-10-10
+
+Spot-checked against the current tree with `rg`. Treat "done" as "the audited
+literal now resolves through `L10n.t` or a catalog key"; no runtime two-language
+smoke pass has been recorded yet.
+
+| Area | Status |
+| --- | --- |
+| Watchdog alert helper | Done. The helper cannot read the app catalog, so `PickyWatchdogHelperLauncher` passes resolved `watchdog.alert.*` text as arguments; the helper falls back to English when an argument is missing. |
+| Capability-registration failure message | Done (`error.connection.reconnectFailed`); no internal terms, the raw error stays in the log. |
+| Git push/pull failure notification | Done (`hud.gitRemote.*`); titles are localized and the body is a short next step instead of raw stderr. |
+| Main-agent question form, activity chip, shell command menu, app menu, feedback view, shortcut recorder, dock group creator, question bubble | Use `L10n.t` or catalog keys now. |
+| TTS link/path substitution | Follows the reply language (`PickySpeechTextSanitizer`), not the UI language. |
+| agentd semantic presentation | `presentation` exists on the message protocol with the English text as fallback. Coverage of every journal/summary/default-title string was not re-audited. |
+| Catalog hygiene | Non-`en`/`ko` leftovers removed. Korean uses "Pickle" (not "피클") except the intentional badge names `hub.stats.badge.{pickleMaster,lunchBreak,weekend,hundredPickles}.name`. About 113 keys have no literal reference in the source; they stay until dynamic key construction is ruled out. |
+| Not re-verified | The P0 `LocaleManager` System-language regression test, `PickyTerminalOverlay` and `PickyToolActivityRow` literals, plural/list formatting, locale-aware formatters, and the static literal checker in the guardrails below. Re-check these before treating the plan as closed. |
 
 This plan does not translate user/agent-authored content, paths, model names,
 tool names, debug logs, Pi-only prompts, or developer CLI output.
@@ -64,7 +82,7 @@ tool names, debug logs, Pi-only prompts, or developer CLI output.
   - `Picky/App/ShellCommandMenuController.swift:51-150`
   - `Picky/Sessions/PickyTerminalOverlay.swift:39-41,592-786,811-815`
   - `Picky/Feedback/CompanionPanelFeedbackView.swift:26-40,318-342,456-458`
-  - `Picky/Watchdog/PickyWatchdogAlertHelper/main.swift:101,109-111`
+  - `Picky/Watchdog/PickyWatchdogAlertHelper/main.swift:101,109-111` (done 2026-10-10)
 - **Problem:** Alerts, terminal statuses, feedback attachment UI, and watchdog
   controls are hardcoded English.
 - **Action:** Move Picky-owned labels/messages to catalog keys. For `NSAlert`,

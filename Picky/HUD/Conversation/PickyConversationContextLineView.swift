@@ -337,6 +337,13 @@ struct PickyConversationContextLineView: View {
             }
         }
 
+        var failureTitleKey: String {
+            switch self {
+            case .push: return "hud.gitRemote.push.failed.title"
+            case .pull: return "hud.gitRemote.pull.failed.title"
+            }
+        }
+
         var symbol: String {
             switch self {
             case .push: return "↑"
@@ -1177,11 +1184,12 @@ struct PickyConversationContextLineView: View {
     }
 
     private func deliverGitFailureNotification(action: GitRemoteAction, outcome: PickyGitRepositoryStatus.GitCommandOutcome) {
-        let summary = outcome.combinedOutput.isEmpty ? "exit \(outcome.exitCode)" : outcome.combinedOutput
-        let trimmedSummary = summary.split(whereSeparator: { $0.isNewline }).prefix(4).joined(separator: "\n")
+        // Raw git stderr can be long and technical, and may contain remote URLs.
+        // The notification gives a short next step instead; the full output is
+        // available by running the command in a terminal.
         let content = UNMutableNotificationContent()
-        content.title = "\(action.actionLabel) failed"
-        content.body = String(trimmedSummary.prefix(280))
+        content.title = L10n.t(action.failureTitleKey)
+        content.body = L10n.t("hud.gitRemote.failed.body")
         content.sound = nil
         let request = UNNotificationRequest(identifier: "picky-git-\(action.actionLabel)-\(UUID().uuidString)", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request) { _ in }

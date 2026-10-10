@@ -42,6 +42,13 @@ struct PickyWatchdogHelperLauncher: PickyWatchdogResponder.HelperLaunching {
         process.arguments = [
             "--parent-pid", String(parentPid),
             "--sample-path", samplePath.path,
+            // The helper cannot read the app's string catalog, so it receives
+            // the dialog text already resolved for the user's language.
+            "--title", L10n.t("watchdog.alert.title"),
+            "--message", L10n.t("watchdog.alert.message", samplePath.path),
+            "--restart-label", L10n.t("watchdog.alert.restart"),
+            "--reveal-label", L10n.t("watchdog.alert.reveal"),
+            "--ignore-label", L10n.t("watchdog.alert.ignore"),
         ]
         process.terminationHandler = { _ in
             // Reset responder state on the main queue so subsequent spin

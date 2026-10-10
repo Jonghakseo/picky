@@ -118,7 +118,7 @@ final class PickyCapabilityRegistrationCoordinator {
             pickyAgentRouterLog(
                 "capability registration retries exhausted owner=\(ownerKey) reason=\(error.message)"
             )
-            return "Picky agent could not register capabilities (\(error.message)). Restart Picky to reconnect."
+            return L10n.t("error.connection.reconnectFailed")
         }
 
         pickyAgentRouterLog(

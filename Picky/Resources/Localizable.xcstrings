@@ -542,7 +542,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "메시지를 보내지 못했어요. 이 피클을 다시 시작하는 중이에요. 잠시 후 다시 보내 주세요."
+            "value": "메시지를 보내지 못했어요. 이 Pickle을 다시 시작하는 중이에요. 잠시 후 다시 보내 주세요."
           }
         }
       }
@@ -559,7 +559,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "메시지를 보내지 못했어요. 이 피클은 더 이어서 실행할 수 없어요. 복제해서 이어가 주세요."
+            "value": "메시지를 보내지 못했어요. 이 Pickle은 더 이어서 실행할 수 없어요. 복제해서 이어가 주세요."
           }
         }
       }
@@ -689,7 +689,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "다시 시작하지 못했어요. 복제하면 같은 대화 기록으로 새 피클을 시작해요."
+            "value": "다시 시작하지 못했어요. 복제하면 같은 대화 기록으로 새 Pickle을 시작해요."
           }
         }
       }
@@ -706,7 +706,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "다시 시작하지 못했어요. 새 피클을 시작해 이어서 작업해 주세요."
+            "value": "다시 시작하지 못했어요. 새 Pickle을 시작해 이어서 작업해 주세요."
           }
         }
       }
@@ -723,7 +723,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 피클을 이어서 실행할 수 없어요"
+            "value": "이 Pickle을 이어서 실행할 수 없어요"
           }
         }
       }
@@ -757,7 +757,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 피클을 다시 시작했어요"
+            "value": "이 Pickle을 다시 시작했어요"
           }
         }
       }
@@ -791,7 +791,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 피클을 다시 시작하는 중이에요"
+            "value": "이 Pickle을 다시 시작하는 중이에요"
           }
         }
       }
@@ -993,13 +993,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn’t install the plugin. Try again in a moment. If it keeps failing, the logs in ~/Library/Application Support/Picky/Logs show the cause."
+            "value": "Couldn’t install the plugin. Try again in a moment. If it keeps failing, use Send feedback to let us know."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "플러그인을 설치하지 못했어요. 잠시 뒤 다시 시도해 주세요. 계속 실패하면 ~/Library/Application Support/Picky/Logs 폴더의 로그에서 원인을 확인할 수 있어요."
+            "value": "플러그인을 설치하지 못했어요. 잠시 뒤 다시 시도해 주세요. 계속 실패하면 피드백 보내기로 알려 주세요."
           }
         }
       }
@@ -1009,13 +1009,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn’t remove the plugin. Try again in a moment. If it keeps failing, the logs in ~/Library/Application Support/Picky/Logs show the cause."
+            "value": "Couldn’t remove the plugin. Try again in a moment. If it keeps failing, use Send feedback to let us know."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "플러그인을 삭제하지 못했어요. 잠시 뒤 다시 시도해 주세요. 계속 실패하면 ~/Library/Application Support/Picky/Logs 폴더의 로그에서 원인을 확인할 수 있어요."
+            "value": "플러그인을 삭제하지 못했어요. 잠시 뒤 다시 시도해 주세요. 계속 실패하면 피드백 보내기로 알려 주세요."
           }
         }
       }
@@ -1025,13 +1025,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn’t update the plugin. Try again in a moment. If it keeps failing, the logs in ~/Library/Application Support/Picky/Logs show the cause."
+            "value": "Couldn’t update the plugin. Try again in a moment. If it keeps failing, use Send feedback to let us know."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "플러그인을 업데이트하지 못했어요. 잠시 뒤 다시 시도해 주세요. 계속 실패하면 ~/Library/Application Support/Picky/Logs 폴더의 로그에서 원인을 확인할 수 있어요."
+            "value": "플러그인을 업데이트하지 못했어요. 잠시 뒤 다시 시도해 주세요. 계속 실패하면 피드백 보내기로 알려 주세요."
           }
         }
       }
@@ -1041,13 +1041,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn’t set up background scheduling. Try again in a moment. If it keeps failing, the logs in ~/Library/Application Support/Picky/Logs show the cause."
+            "value": "Couldn’t set up background scheduling. Try again in a moment. If it keeps failing, use Send feedback to let us know."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "예약 자동 실행을 설정하지 못했어요. 잠시 뒤 다시 시도해 주세요. 계속 실패하면 ~/Library/Application Support/Picky/Logs 폴더의 로그에서 원인을 확인할 수 있어요."
+            "value": "예약 자동 실행을 설정하지 못했어요. 잠시 뒤 다시 시도해 주세요. 계속 실패하면 피드백 보내기로 알려 주세요."
           }
         }
       }
@@ -2595,24 +2595,6 @@
             "state": "translated",
             "value": "작업 %1$lld개 실행 중"
           }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld件のタスクを実行中"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld 个任务正在运行"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld 個工作正在執行"
-          }
         }
       }
     },
@@ -2628,24 +2610,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "하위 에이전트 %1$lld개"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サブエージェント %1$lld件"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "子代理 · %1$lld"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "子代理 · %1$lld"
           }
         }
       }
@@ -2663,24 +2627,6 @@
             "state": "translated",
             "value": "하위 에이전트 작업"
           }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サブエージェントの作業"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "子代理任务"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "子代理工作"
-          }
         }
       }
     },
@@ -2696,24 +2642,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "서브에이전트 %1$@ 실행중"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サブエージェント %1$@ 実行中"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "子代理 %1$@ 正在运行"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "子代理 %1$@ 執行中"
           }
         }
       }
@@ -6442,7 +6370,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "보관된 피클 전체 삭제"
+            "value": "보관된 Pickle 전체 삭제"
           }
         }
       }
@@ -9277,24 +9205,6 @@
             "state": "translated",
             "value": "전체 복사"
           }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "すべてコピー"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "复制全部"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "複製全部"
-          }
         }
       }
     },
@@ -9550,24 +9460,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "전체 결과 보기"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "結果をすべて表示"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示完整结果"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "顯示完整結果"
           }
         }
       }
@@ -23554,7 +23446,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "보관된 피클 전체 삭제"
+            "value": "보관된 Pickle 전체 삭제"
           }
         }
       }
@@ -34364,6 +34256,150 @@
           "stringUnit": {
             "state": "translated",
             "value": "Picky 대화로 보내지 못했어요. 다시 시도해 주세요."
+          }
+        }
+      }
+    },
+    "watchdog.alert.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky is not responding"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky가 응답하지 않아요"
+          }
+        }
+      }
+    },
+    "watchdog.alert.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky was frozen for several seconds. A diagnostic sample was saved to:\n\n%@\n\nRestarting Picky recovers the window and restarts its local service. Your sessions reconnect after it opens."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky가 몇 초 동안 멈춰 있었어요. 진단용 샘플을 아래 위치에 저장했어요.\n\n%@\n\nPicky를 다시 시작하면 창이 복구되고 로컬 서비스도 다시 시작돼요. 세션은 앱이 열린 뒤 다시 연결돼요."
+          }
+        }
+      }
+    },
+    "watchdog.alert.restart": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restart Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 다시 시작"
+          }
+        }
+      }
+    },
+    "watchdog.alert.reveal": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Sample in Finder"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finder에서 샘플 보기"
+          }
+        }
+      }
+    },
+    "watchdog.alert.ignore": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ignore"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무시"
+          }
+        }
+      }
+    },
+    "error.connection.reconnectFailed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky lost its connection and couldn’t reconnect. Restart Picky to try again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 연결이 끊겼고 다시 연결하지 못했어요. Picky를 다시 시작해 주세요."
+          }
+        }
+      }
+    },
+    "hud.gitRemote.push.failed.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git push failed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git push에 실패했어요"
+          }
+        }
+      }
+    },
+    "hud.gitRemote.pull.failed.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git pull failed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git pull에 실패했어요"
+          }
+        }
+      }
+    },
+    "hud.gitRemote.failed.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check your network and repository access, then try again. Run the command in a terminal to see the details."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "네트워크와 저장소 접근 권한을 확인한 뒤 다시 시도해 주세요. 자세한 내용은 터미널에서 같은 명령을 실행해 확인할 수 있어요."
           }
         }
       }

@@ -9,26 +9,10 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View, @
     let crossSize: CGFloat
     let onMinimize: () -> Void
     var compactWidth: CGFloat? = nil
-    /// Target width of the lane that holds the handle and collapse notch.
-    /// The rail's width at the screen edge; the full shell width to center them.
-    var compactControlsWidth: CGFloat = PickyHUDDockCompactLayout.iconColumnWidth
     @ViewBuilder var content: () -> Content
     @ViewBuilder var utilities: () -> Utilities
     @ViewBuilder var handle: () -> Handle
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Lane width on screen. It follows `compactControlsWidth` in a separate
-    /// transaction so only this width animates. An implicit animation on the
-    /// lanes would also interpolate their position when a HUD open resizes the
-    /// panel, so the collapse notch would fly across the rows to the bottom.
-    @State private var displayedControlsWidth: CGFloat?
-
-    /// Same curve and duration as the shell's expansion, so a collapsing
-    /// centered lane stays aligned with the shrinking shell.
-    private var controlLaneAnimation: Animation? {
-        reduceMotion ? nil : .easeOut(duration: 0.18)
-    }
-
     private var horizontal: Bool { dockSide.orientation == .horizontal }
 
     var animatableData: CGFloat {
@@ -44,7 +28,9 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View, @
         }
     }
 
-    private var laneWidth: CGFloat { displayedControlsWidth ?? compactControlsWidth }
+    /// The handle and collapse notch stay over the icon column at the
+    /// display-facing edge, whether the shell is expanded or a HUD is open.
+    private var laneWidth: CGFloat { PickyHUDDockCompactLayout.iconColumnWidth }
 
     private func compactChrome(width: CGFloat) -> some View {
         let alignment: Alignment = dockSide == .left ? .leading : .trailing
@@ -76,16 +62,6 @@ struct PickyHUDDockChrome<Content: View, Utilities: View, Handle: View>: View, @
                 .clipShape(shape)
         }
         .background(PickyHUDVisibleChromeFrameReporter())
-        // Runs after the HUD-open relayout has committed without animation,
-        // so this transaction carries nothing but the lane width.
-        .onChange(of: compactControlsWidth) { _, target in
-            withAnimation(controlLaneAnimation) { displayedControlsWidth = target }
-        }
-        // Seed the lane with the current target. Leaving it empty would make
-        // the first target change render directly, so the first HUD open
-        // after launch or a restore would move the notches without animating.
-        // The classic branch does not observe the target, so reseed on return.
-        .onAppear { displayedControlsWidth = compactControlsWidth }
     }
 
     private var classicChrome: some View {

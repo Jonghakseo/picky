@@ -269,9 +269,7 @@ struct PickyHUDDockRailView: View {
             PickyHUDDockChrome(
                 dockSide: dockSide, metrics: metrics, railLength: overflowLayout.railLength,
                 crossSize: railCrossSize, onMinimize: onMinimize,
-                compactWidth: expansion.isExpanded ? railCrossSize : PickyHUDDockCompactLayout.iconColumnWidth,
-                compactControlsWidth: activeSessionID != nil || expansion.centersControls
-                    ? railCrossSize : PickyHUDDockCompactLayout.iconColumnWidth
+                compactWidth: expansion.isExpanded ? railCrossSize : PickyHUDDockCompactLayout.iconColumnWidth
             ) {
                 listContent
             } utilities: {
@@ -337,8 +335,7 @@ struct PickyHUDDockRailView: View {
 
     private func updateExpansion() {
         let hasPreview = orientation == .vertical || expansion.previewTarget != nil || activeSessionID != nil
-        expansion.update(pointerInside: isDockHovered && hasPreview, heldOpen: holdsExpansion && hasPreview,
-                         conversationOpen: activeSessionID != nil)
+        expansion.update(pointerInside: isDockHovered && hasPreview, heldOpen: holdsExpansion && hasPreview)
     }
 
     private var railCrossSize: CGFloat {

@@ -27,37 +27,6 @@ struct PickyHUDDockExpansionTests {
         }
     }
 
-    @MainActor @Test func conversationCloseRetainsCenteredControlsUntilCollapseThenHoverStaysAtEdge() async throws {
-        let controller = PickyHUDDockExpansionController()
-        defer { controller.stop() }
-        controller.update(pointerInside: false, heldOpen: true, conversationOpen: true)
-        #expect(controller.isExpanded)
-        #expect(controller.centersControls)
-
-        controller.update(pointerInside: false, heldOpen: false)
-        // Closing the HUD must not reset alignment during the collapse grace period.
-        #expect(controller.centersControls)
-        controller.update(pointerInside: true, heldOpen: false)
-        #expect(controller.centersControls)
-        controller.update(pointerInside: false, heldOpen: false)
-        try await withPickyTestTimeout("centered dock collapses") {
-            for await expanded in controller.$isExpanded.values {
-                if !expanded { return }
-            }
-        }
-        #expect(!controller.centersControls)
-
-        controller.update(pointerInside: true, heldOpen: false)
-        try await withPickyTestTimeout("next hover keeps controls at edge") {
-            for await expanded in controller.$isExpanded.values {
-                if expanded { return }
-            }
-        }
-        #expect(!controller.centersControls)
-        controller.update(pointerInside: true, heldOpen: true, conversationOpen: true)
-        #expect(controller.centersControls)
-    }
-
     @Test func passingOverTheRailDoesNotExpandItLater() {
         var state = PickyHUDDockExpansionState()
         state.update(pointerInside: true, heldOpen: false, now: 0)

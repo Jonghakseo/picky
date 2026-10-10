@@ -1,0 +1,57 @@
+name: Agentd tests
+
+on:
+  push:
+  pull_request:
+  # Lets the release workflow gate publishing on the same checks.
+  workflow_call:
+    inputs:
+      ref:
+        description: "Optional source ref to test (the release tag)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24.18.1"
+  PNPM_VERSION: "10.15.1"
+
+jobs:
+  test:
+    name: Typecheck and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck agentd
+        run: pnpm --dir agentd run typecheck
+
+      - name: Typecheck remote web app
+        run: pnpm --dir agentd run --if-present typecheck:web
+
+      # Same entry point as scripts/pre-push-checks.sh: a parallel phase, then
+      # the load-sensitive server and session-supervisor suites run serially.
+      - name: Run agentd tests
+        run: pnpm --dir agentd run test:ci

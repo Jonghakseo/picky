@@ -80,6 +80,10 @@ UI_EFFECT_TEST_ENV=(
   "TEST_RUNNER_PICKY_PRE_PUSH_UI_EFFECT_TESTS=0"
   "TEST_RUNNER_PICKY_UI_TEST_SESSION="
   "TEST_RUNNER_PICKY_HUB_FOCUS_PERF_PROFILE="
+  # Spawns the real gateway on a random loopback port with a throwaway app
+  # support directory. It never activates, focuses, or draws on the desktop, so
+  # it belongs in the offscreen suite. Needs agentd/dist (see build step below).
+  "TEST_RUNNER_PICKY_REMOTE_GATEWAY_INTEGRATION=1"
 )
 if [ "$UI_EFFECTS" = true ]; then
   UI_EFFECT_TEST_ENV=(
@@ -88,6 +92,7 @@ if [ "$UI_EFFECTS" = true ]; then
     "TEST_RUNNER_PICKY_HUB_FOCUS_PERF_PROFILE=github-hosted"
     "TEST_RUNNER_PICKY_HUB_FOCUS_PERF_REPORT_PATH=$HUB_FOCUS_PERF_REPORT"
     "TEST_RUNNER_PICKY_HUB_FOCUS_PERF_MODE=$HUB_FOCUS_PERF_MODE"
+    "TEST_RUNNER_PICKY_REMOTE_GATEWAY_INTEGRATION=0"
   )
 fi
 
@@ -133,6 +138,12 @@ run_picky_tests() {
       --xcode-log "$PICKY_TEST_LOG" \
       --profile github-hosted
   fi
+}
+
+# PickyRemoteGatewayIntegrationTests launches agentd/dist/gateway/main.js through
+# the production launcher and fails when the build output is missing.
+build_remote_gateway_for_integration_test() {
+  run_step "agentd: build (remote gateway integration test needs dist/gateway/main.js)" pnpm --dir agentd run build
 }
 
 # Lower-only ratchet for SwiftLint error-severity violations. The `.swiftlint.yml`
@@ -209,7 +220,9 @@ fi
 
 if [ "$TEST_MODE" = --swift-tests ]; then
   require_command xcodebuild "Install Xcode."
+  require_command pnpm "Install pnpm 10.15.1 or run Corepack setup."
   run_step "test environment isolation guard" python3 "$SCRIPT_ROOT/scripts/check-test-environment-isolation.py"
+  build_remote_gateway_for_integration_test
   run_picky_tests
   echo "✅ offscreen Swift checks passed; real UI checks belong to isolated CI."
   exit 0
@@ -236,12 +249,14 @@ if [ -s "$PRE_PUSH_REFS" ]; then
 fi
 
 run_step "agentd: typecheck" pnpm --dir agentd run typecheck
+run_step "agentd: typecheck (remote web app)" pnpm --dir agentd run typecheck:web
 run_step "agentd: lint (zero warnings)" pnpm --dir agentd run lint
 run_step "Lint suppression guard" pnpm run check:eslint-suppressions
 # Most files run in Vitest's parallel pool. The WebSocket-heavy server and
 # session-supervisor suites have load-sensitive delivery deadlines, so test:ci
 # runs those two files in a second, serial phase.
 run_step "agentd: tests (parallel + isolated server)" pnpm --dir agentd run test:ci
+build_remote_gateway_for_integration_test
 run_swiftlint_warning_first
 run_step "Picky app build" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -derivedDataPath "$DERIVED_DATA_PATH" build
 

@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://deepwiki.com/Jonghakseo/picky">
-    <img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" />
+    Ask DeepWiki
   </a>
 </p>
 

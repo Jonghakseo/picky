@@ -22,54 +22,63 @@ struct GroqTranscriptionSettingsTests {
 
         #expect(settings.sttVocabulary == "Picky, Pickle")
         #expect(settings.sttIncludesContextTerms == true)
-        #expect(settings.groqSTTAPIKey.isEmpty)
         #expect(GroqTranscriptionDefaults.modelName(from: settings) == "whisper-large-v3")
     }
 
     @Test func groqSettingsSurviveSaveAndLoad() throws {
         var settings = defaults()
         settings.sttProvider = .groq
-        settings.groqSTTAPIKey = "gsk_test"
         settings.groqSTTModel = "whisper-large-v3-turbo"
         settings.groqSTTLanguage = "ko"
         settings.sttVocabulary = "Picky, 크리에이트립"
         settings.sttIncludesContextTerms = false
 
-        let decoded = try JSONDecoder().decode(PickySettings.self, from: JSONEncoder().encode(settings))
+        let encoded = try JSONEncoder().encode(settings)
+        let decoded = try JSONDecoder().decode(PickySettings.self, from: encoded)
 
         #expect(decoded.sttProvider == .groq)
-        #expect(decoded.groqSTTAPIKey == "gsk_test")
+        // The Groq key is a Keychain secret and never part of settings.json.
+        #expect(!String(decoding: encoded, as: UTF8.self).lowercased().contains("groqsttapikey"))
         #expect(decoded.groqSTTModel == "whisper-large-v3-turbo")
         #expect(decoded.groqSTTLanguage == "ko")
         #expect(decoded.sttVocabulary == "Picky, 크리에이트립")
         #expect(decoded.sttIncludesContextTerms == false)
     }
 
-    @Test func groqSelectionUsesGroqEndpointAndKey() {
+    @Test func groqSelectionUsesGroqEndpointAndStoredKey() throws {
         var settings = defaults()
         settings.sttProvider = .groq
-        settings.groqSTTAPIKey = "gsk_test"
         settings.openAISTTAPIKey = "sk-should-not-be-used"
+        let secrets = PickyInMemorySecretStore()
+        secrets.setSecret(" gsk_test ", for: .groqSTTAPIKey)
 
-        let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(settings: settings, environment: [:])
-        let configuration = BuddyTranscriptionProviderFactory.makeGroqSTTConfiguration(settings: settings, environment: [:])
+        let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
+            settings: settings, environment: [:], secretStore: secrets
+        )
+        let groq = try #require(provider as? GroqTranscriptionProvider)
 
-        #expect(provider is OpenAITranscriptionProvider)
-        #expect(provider.displayName == GroqTranscriptionDefaults.displayName)
-        #expect(provider.isConfigured)
-        #expect(configuration.apiKey == "gsk_test")
-        #expect(configuration.audioURL(forPath: "audio/transcriptions").absoluteString
+        #expect(groq.displayName == GroqTranscriptionDefaults.displayName)
+        #expect(groq.isConfigured)
+        #expect(groq.configuration.apiKey == "gsk_test")
+        #expect(groq.configuration.audioURL(forPath: "audio/transcriptions").absoluteString
             == "https://api.groq.com/openai/v1/audio/transcriptions")
     }
 
-    @Test func groqWithoutKeyExplainsMissingKey() {
+    @Test func keySavedAfterProviderCreationAppliesWithoutRebuild() {
         var settings = defaults()
         settings.sttProvider = .groq
-
-        let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(settings: settings, environment: [:])
-
+        let secrets = PickyInMemorySecretStore()
+        let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
+            settings: settings, environment: [:], secretStore: secrets
+        )
         #expect(provider.isConfigured == false)
         #expect(provider.unavailableExplanation != nil)
+
+        secrets.setSecret("gsk_new", for: .groqSTTAPIKey)
+        #expect(provider.isConfigured)
+
+        secrets.setSecret("  ", for: .groqSTTAPIKey)
+        #expect(provider.isConfigured == false)
     }
 
     @Test func frequentWordsAreParsedFromCommasAndNewlines() {

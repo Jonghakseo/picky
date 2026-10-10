@@ -290,3 +290,184 @@ struct PickyGroqModelChoiceView: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
+
+// MARK: - Field sections
+
+/// Label and menu styling resolved by the hosting settings view, which differs
+/// between the standalone panel and the Hub.
+struct PickyVoiceFieldStyle {
+    let labelFont: Font
+    let labelColor: Color
+    let supportingColor: Color
+    let menuMaxWidth: CGFloat
+
+    func label(_ key: LocalizedStringKey) -> some View {
+        Text(key).font(labelFont).foregroundColor(labelColor)
+    }
+}
+
+/// API key input with the connection check, its status, and the key guide or
+/// console link. The check result is shown only while the checked key remains.
+struct PickySTTKeySection: View {
+    let provider: PickySTTKeyProvider
+    let label: LocalizedStringKey
+    let placeholder: String
+    @Binding var apiKey: String
+    let style: PickyVoiceFieldStyle
+    let checkRequest: () -> (configuration: OpenAIAudioConfiguration, modelName: String)
+    let onDraftChange: () -> Void
+    let onCommit: () -> Void
+    @State private var check: PickySTTConnectionCheck?
+
+    var body: some View {
+        let current = check.flatMap { $0.applies(to: provider, apiKey: apiKey) ? $0 : nil }
+        let isInvalid = current?.phase == .finished(.invalidKey)
+        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            style.label(label)
+            HStack(spacing: DS.Spacing.space2) {
+                SecureField(placeholder, text: $apiKey)
+                    .textFieldStyle(.plain)
+                    .font(PickyHUDTypography.supportingMonospacedMedium)
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, DS.Spacing.space2)
+                    .background(
+                        RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
+                            .stroke(isInvalid ? DS.Colors.destructiveText : DS.Colors.borderSubtle.opacity(0.6), lineWidth: isInvalid ? 1 : 0.5)
+                    )
+                    .onChange(of: apiKey) { _, _ in onDraftChange() }
+                    .onSubmit(onCommit)
+                    .frame(maxWidth: 420)
+                PickyHubButton(
+                    title: current?.phase == .checking ? "settings.voice.stt.checking" : "settings.voice.stt.check",
+                    role: .secondary,
+                    isBusy: current?.phase == .checking,
+                    isEnabled: !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    action: runCheck
+                )
+                Spacer(minLength: 0)
+            }
+            if case .finished(let result)? = current?.phase {
+                PickySTTConnectionStatusView(provider: provider, result: result)
+            }
+            if PickySTTConnectionCheck.showsKeyGuide(apiKey: apiKey, check: current) {
+                PickySTTKeyGuideView(provider: provider)
+            } else {
+                PickySTTConsoleLinkView(provider: provider)
+            }
+        }
+    }
+
+    /// Saves pending drafts first so a successful check matches what dictation uses.
+    private func runCheck() {
+        onCommit()
+        let request = checkRequest()
+        let pending = PickySTTConnectionCheck(
+            provider: provider,
+            apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+            phase: .checking
+        )
+        check = pending
+        Task { @MainActor in
+            let result = await OpenAITranscriptionProvider.checkConnection(
+                configuration: request.configuration,
+                modelName: request.modelName
+            )
+            guard check == pending else { return }
+            check?.phase = .finished(result)
+        }
+    }
+}
+
+/// Groq key, model choice and spoken language.
+struct PickyGroqSTTSettingsFields: View {
+    @Binding var apiKey: String
+    @Binding var modelName: String
+    @Binding var language: String
+    let style: PickyVoiceFieldStyle
+    let onDraftChange: () -> Void
+    let onCommit: () -> Void
+
+    var body: some View {
+        PickySTTKeySection(
+            provider: .groq,
+            label: "settings.voice.stt.apiKey",
+            placeholder: "gsk_…",
+            apiKey: $apiKey,
+            style: style,
+            checkRequest: {
+                (OpenAIAudioConfiguration(apiKey: apiKey, baseURL: GroqTranscriptionDefaults.baseURL), modelName)
+            },
+            onDraftChange: onDraftChange,
+            onCommit: onCommit
+        )
+        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            style.label("settings.voice.stt.model")
+            PickyGroqModelChoiceView(modelName: $modelName)
+        }
+        .onChange(of: modelName) { _, _ in onCommit() }
+        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            style.label("settings.voice.stt.language")
+            PickyNativeMenuPicker(
+                title: L10n.t("settings.voice.stt.language"),
+                selection: $language,
+                options: [
+                    .init(value: "", title: L10n.t("settings.voice.stt.language.auto")),
+                    .init(value: "ko", title: "한국어"),
+                    .init(value: "en", title: "English"),
+                    .init(value: "ja", title: "日本語"),
+                    .init(value: "zh", title: "中文"),
+                ]
+            )
+            .frame(maxWidth: style.menuMaxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onChange(of: language) { _, _ in onCommit() }
+        }
+    }
+}
+
+/// Frequent words and the app/window context toggle for prompt-capable providers.
+struct PickySTTVocabularySection: View {
+    @Binding var terms: String
+    @Binding var includesContextTerms: Bool
+    let style: PickyVoiceFieldStyle
+    let onDraftChange: () -> Void
+    let onCommit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            style.label("settings.voice.stt.vocabulary")
+            TextField(L10n.t("settings.voice.stt.vocabulary.placeholder"), text: $terms, axis: .vertical)
+                .lineLimit(2...4)
+                .textFieldStyle(.plain)
+                .font(PickyHUDTypography.supportingMedium)
+                .foregroundColor(DS.Colors.textSecondary)
+                .padding(.horizontal, 9)
+                .padding(.vertical, DS.Spacing.space2)
+                .background(
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
+                        .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
+                )
+                .onChange(of: terms) { _, _ in onDraftChange() }
+                .onSubmit(onCommit)
+            Text("settings.voice.stt.vocabulary.note")
+                .font(PickyHUDTypography.supporting)
+                .foregroundColor(style.supportingColor)
+                .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
+            HStack {
+                Text("settings.voice.stt.vocabulary.context")
+                    .font(PickyHUDTypography.labelMedium)
+                    .foregroundColor(DS.Colors.textPrimary)
+                Spacer(minLength: 8)
+                Toggle("settings.voice.stt.vocabulary.context", isOn: $includesContextTerms)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(DS.Colors.accent)
+                    .controlSize(.small)
+            }
+            .padding(.vertical, DS.Spacing.space2)
+            .onChange(of: includesContextTerms) { _, _ in onCommit() }
+        }
+    }
+}

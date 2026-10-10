@@ -690,9 +690,9 @@ struct PickySettings: Codable, Equatable {
     var elevenLabsSTTAPIKey: String
     var elevenLabsSTTModel: String
     var elevenLabsSTTLanguage: String
-    // Groq STT (OpenAI-compatible Whisper). Empty model falls back to
-    // `GroqTranscriptionDefaults.modelName`; empty language means auto-detect.
-    var groqSTTAPIKey: String
+    // Groq STT (OpenAI-compatible Whisper). The API key lives in
+    // `PickySecretStore`, not here. Empty model falls back to
+    // `GroqTranscriptionDefaults.accurateModelName`; empty language means auto-detect.
     var groqSTTModel: String
     var groqSTTLanguage: String
     /// Comma- or newline-separated spellings sent as transcription hints by
@@ -869,7 +869,6 @@ struct PickySettings: Codable, Equatable {
         elevenLabsSTTAPIKey: String = "",
         elevenLabsSTTModel: String = "",
         elevenLabsSTTLanguage: String = "",
-        groqSTTAPIKey: String = "",
         groqSTTModel: String = "",
         groqSTTLanguage: String = "",
         sttVocabulary: String = PickyTranscriptionVocabulary.defaultTermsText,
@@ -951,7 +950,6 @@ struct PickySettings: Codable, Equatable {
         self.elevenLabsSTTAPIKey = elevenLabsSTTAPIKey
         self.elevenLabsSTTModel = elevenLabsSTTModel
         self.elevenLabsSTTLanguage = elevenLabsSTTLanguage
-        self.groqSTTAPIKey = groqSTTAPIKey
         self.groqSTTModel = groqSTTModel
         self.groqSTTLanguage = groqSTTLanguage
         self.sttVocabulary = sttVocabulary
@@ -1138,7 +1136,6 @@ struct PickySettings: Codable, Equatable {
         copy.elevenLabsSTTAPIKey = elevenLabsSTTAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.elevenLabsSTTModel = elevenLabsSTTModel.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.elevenLabsSTTLanguage = elevenLabsSTTLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
-        copy.groqSTTAPIKey = groqSTTAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.groqSTTModel = groqSTTModel.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.groqSTTLanguage = groqSTTLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.sttVocabulary = sttVocabulary.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1190,7 +1187,6 @@ struct PickySettings: Codable, Equatable {
         case elevenLabsSTTAPIKey
         case elevenLabsSTTModel
         case elevenLabsSTTLanguage
-        case groqSTTAPIKey
         case groqSTTModel
         case groqSTTLanguage
         case sttVocabulary
@@ -1278,7 +1274,6 @@ struct PickySettings: Codable, Equatable {
         elevenLabsSTTAPIKey = try container.decodeIfPresent(String.self, forKey: .elevenLabsSTTAPIKey) ?? defaults.elevenLabsSTTAPIKey
         elevenLabsSTTModel = try container.decodeIfPresent(String.self, forKey: .elevenLabsSTTModel) ?? defaults.elevenLabsSTTModel
         elevenLabsSTTLanguage = try container.decodeIfPresent(String.self, forKey: .elevenLabsSTTLanguage) ?? defaults.elevenLabsSTTLanguage
-        groqSTTAPIKey = try container.decodeIfPresent(String.self, forKey: .groqSTTAPIKey) ?? defaults.groqSTTAPIKey
         groqSTTModel = try container.decodeIfPresent(String.self, forKey: .groqSTTModel) ?? defaults.groqSTTModel
         groqSTTLanguage = try container.decodeIfPresent(String.self, forKey: .groqSTTLanguage) ?? defaults.groqSTTLanguage
         sttVocabulary = try container.decodeIfPresent(String.self, forKey: .sttVocabulary) ?? defaults.sttVocabulary

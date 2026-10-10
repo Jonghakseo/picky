@@ -50,7 +50,6 @@ struct CompanionPanelSettingsView: View {
     @State private var elevenLabsSTTLanguageDraft: String = ""
     @State private var groqSTTAPIKeyDraft: String = ""
     @State private var sttVocabularyDraft: String = ""
-    @State private var sttConnectionCheck: PickySTTConnectionCheck?
     @StateObject private var oauthLoginController: PickyPiOAuthLoginController
     @StateObject private var edgeTTSVoiceCatalog = EdgeTTSVoiceCatalog()
     @State private var saveStatuses = CompanionPanelSettingsSaveStatuses()
@@ -1073,17 +1072,17 @@ struct CompanionPanelSettingsView: View {
                     }
 
                     if viewModel.settings.sttProvider == .groq {
-                        sttKeySection(
-                            provider: .groq,
-                            label: "settings.voice.stt.apiKey",
-                            placeholder: "gsk_…",
-                            text: $groqSTTAPIKeyDraft
+                        PickyGroqSTTSettingsFields(
+                            apiKey: $groqSTTAPIKeyDraft,
+                            modelName: Binding(
+                                get: { GroqTranscriptionDefaults.modelName(from: viewModel.settings) },
+                                set: { viewModel.settings.groqSTTModel = $0 }
+                            ),
+                            language: $viewModel.settings.groqSTTLanguage,
+                            style: voiceFieldStyle,
+                            onDraftChange: voiceDraftDidChange,
+                            onCommit: commitVoiceField
                         )
-                        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                            fieldLabel("settings.voice.stt.model")
-                            PickyGroqModelChoiceView(modelName: groqModelBinding)
-                        }
-                        groqLanguagePicker
                     }
 
                     if viewModel.settings.sttProvider == .azure {
@@ -1105,11 +1104,21 @@ struct CompanionPanelSettingsView: View {
                     }
 
                     if viewModel.settings.sttProvider == .openai {
-                        sttKeySection(
+                        PickySTTKeySection(
                             provider: .openai,
                             label: "settings.voice.openai.stt.apiKey",
                             placeholder: "sk-…",
-                            text: $openAISTTAPIKeyDraft
+                            apiKey: $openAISTTAPIKeyDraft,
+                            style: voiceFieldStyle,
+                            checkRequest: {
+                                let model = openAISTTModelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                                return (OpenAIAudioConfiguration(
+                                    apiKey: openAISTTAPIKeyDraft,
+                                    baseURL: OpenAIAudioConfiguration.parseBaseURLOverride(openAISTTBaseURLDraft) ?? OpenAIAudioConfiguration.defaultBaseURL
+                                ), model.isEmpty ? OpenAITranscriptionProvider.defaultModelName : model)
+                            },
+                            onDraftChange: voiceDraftDidChange,
+                            onCommit: commitVoiceField
                         )
                         voiceTextField(
                             label: "settings.voice.openai.stt.model",
@@ -1155,7 +1164,13 @@ struct CompanionPanelSettingsView: View {
                     }
 
                     if [.groq, .openai, .azure].contains(viewModel.settings.sttProvider) {
-                        sttVocabularySection
+                        PickySTTVocabularySection(
+                            terms: $sttVocabularyDraft,
+                            includesContextTerms: $viewModel.settings.sttIncludesContextTerms,
+                            style: voiceFieldStyle,
+                            onDraftChange: voiceDraftDidChange,
+                            onCommit: commitVoiceField
+                        )
                     }
                 }
 
@@ -1182,8 +1197,13 @@ struct CompanionPanelSettingsView: View {
                     }
 
                     if viewModel.settings.ttsEnabled, viewModel.settings.ttsProvider == .edge {
-                        edgeTTSSettings
-                            .task { edgeTTSVoiceCatalog.refresh() }
+                        PickyEdgeTTSSettingsView(
+                            catalog: edgeTTSVoiceCatalog,
+                            voice: $viewModel.settings.edgeTTSVoice,
+                            style: voiceFieldStyle,
+                            onCommit: commitVoiceField
+                        )
+                        .task { edgeTTSVoiceCatalog.refresh() }
                     }
 
                     if viewModel.settings.ttsEnabled, viewModel.settings.ttsProvider == .azure {
@@ -1399,148 +1419,13 @@ struct CompanionPanelSettingsView: View {
         }
     }
 
-    // MARK: Speech recognition helpers
-
-    private func sttKeySection(
-        provider: PickySTTKeyProvider,
-        label: LocalizedStringKey,
-        placeholder: String,
-        text: Binding<String>
-    ) -> some View {
-        let check = sttConnectionCheck.flatMap { $0.applies(to: provider, apiKey: text.wrappedValue) ? $0 : nil }
-        let hasKey = !text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-            fieldLabel(label)
-            HStack(spacing: DS.Spacing.space2) {
-                voiceSecureInput(placeholder: placeholder, text: text, isInvalid: check?.phase == .finished(.invalidKey))
-                    .frame(maxWidth: 420)
-                PickyHubButton(
-                    title: check?.phase == .checking ? "settings.voice.stt.checking" : "settings.voice.stt.check",
-                    role: .secondary,
-                    isBusy: check?.phase == .checking,
-                    isEnabled: hasKey
-                ) {
-                    runSTTConnectionCheck(provider: provider)
-                }
-                Spacer(minLength: 0)
-            }
-            if case .finished(let result)? = check?.phase {
-                PickySTTConnectionStatusView(provider: provider, result: result)
-            }
-            if PickySTTConnectionCheck.showsKeyGuide(apiKey: text.wrappedValue, check: check) {
-                PickySTTKeyGuideView(provider: provider)
-            } else {
-                PickySTTConsoleLinkView(provider: provider)
-            }
-        }
-    }
-
-    private var groqModelBinding: Binding<String> {
-        Binding(
-            get: { GroqTranscriptionDefaults.modelName(from: viewModel.settings) },
-            set: { newValue in
-                viewModel.settings.groqSTTModel = newValue
-                commitVoiceField()
-            }
+    private var voiceFieldStyle: PickyVoiceFieldStyle {
+        PickyVoiceFieldStyle(
+            labelFont: presentation.showsNavigationChrome ? PickyHUDTypography.metaSemibold : PickyHUDTypography.labelSemibold,
+            labelColor: presentation.showsNavigationChrome ? DS.Colors.textTertiary : PickyHubTheme.Colors.textPrimary,
+            supportingColor: supportingTextColor,
+            menuMaxWidth: embeddedMenuMaximumWidth
         )
-    }
-
-    private var groqLanguagePicker: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-            fieldLabel("settings.voice.stt.language")
-            PickyNativeMenuPicker(
-                title: L10n.t("settings.voice.stt.language"),
-                selection: $viewModel.settings.groqSTTLanguage,
-                options: [
-                    .init(value: "", title: L10n.t("settings.voice.stt.language.auto")),
-                    .init(value: "ko", title: "한국어"),
-                    .init(value: "en", title: "English"),
-                    .init(value: "ja", title: "日本語"),
-                    .init(value: "zh", title: "中文"),
-                ]
-            )
-            .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .onChange(of: viewModel.settings.groqSTTLanguage) { _, _ in commitVoiceField() }
-        }
-    }
-
-    private var sttVocabularySection: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-            fieldLabel("settings.voice.stt.vocabulary")
-            TextField(L10n.t("settings.voice.stt.vocabulary.placeholder"), text: $sttVocabularyDraft, axis: .vertical)
-                .lineLimit(2...4)
-                .textFieldStyle(.plain)
-                .font(PickyHUDTypography.supportingMedium)
-                .foregroundColor(DS.Colors.textSecondary)
-                .padding(.horizontal, 9)
-                .padding(.vertical, DS.Spacing.space2)
-                .background(
-                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
-                        .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
-                )
-                .onChange(of: sttVocabularyDraft) { _, _ in voiceDraftDidChange() }
-                .onSubmit { commitVoiceField() }
-            Text("settings.voice.stt.vocabulary.note")
-                .font(PickyHUDTypography.supporting)
-                .foregroundColor(supportingTextColor)
-                .fixedSize(horizontal: false, vertical: true)
-                .pickyHubSelectableText()
-            toggleRow(
-                "settings.voice.stt.vocabulary.context",
-                isOn: $viewModel.settings.sttIncludesContextTerms,
-                divider: false
-            )
-            .onChange(of: viewModel.settings.sttIncludesContextTerms) { _, _ in commitVoiceField() }
-        }
-    }
-
-    /// Saves pending voice drafts, then verifies the typed key against the
-    /// provider. The result is shown only while the same key stays in the field.
-    private func runSTTConnectionCheck(provider: PickySTTKeyProvider) {
-        commitVoiceField()
-        let configuration: OpenAIAudioConfiguration
-        let modelName: String
-        let apiKey: String
-        switch provider {
-        case .groq:
-            apiKey = groqSTTAPIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-            configuration = OpenAIAudioConfiguration(apiKey: apiKey, baseURL: GroqTranscriptionDefaults.baseURL)
-            modelName = GroqTranscriptionDefaults.modelName(from: viewModel.settings)
-        case .openai:
-            apiKey = openAISTTAPIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-            configuration = OpenAIAudioConfiguration(
-                apiKey: apiKey,
-                baseURL: OpenAIAudioConfiguration.parseBaseURLOverride(openAISTTBaseURLDraft) ?? OpenAIAudioConfiguration.defaultBaseURL
-            )
-            let draftModel = openAISTTModelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-            modelName = draftModel.isEmpty ? OpenAITranscriptionProvider.defaultModelName : draftModel
-        }
-        let pending = PickySTTConnectionCheck(provider: provider, apiKey: apiKey, phase: .checking)
-        sttConnectionCheck = pending
-        Task { @MainActor in
-            let result = await OpenAITranscriptionProvider.checkConnection(configuration: configuration, modelName: modelName)
-            guard sttConnectionCheck == pending else { return }
-            sttConnectionCheck?.phase = .finished(result)
-        }
-    }
-
-    private func voiceSecureInput(placeholder: String, text: Binding<String>, isInvalid: Bool) -> some View {
-        SecureField(placeholder, text: text)
-            .textFieldStyle(.plain)
-            .font(PickyHUDTypography.supportingMonospacedMedium)
-            .foregroundColor(DS.Colors.textSecondary)
-            .padding(.horizontal, 9)
-            .padding(.vertical, DS.Spacing.space2)
-            .background(
-                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
-                    .stroke(
-                        isInvalid ? DS.Colors.destructiveText : DS.Colors.borderSubtle.opacity(0.6),
-                        lineWidth: isInvalid ? 1 : 0.5
-                    )
-            )
-            .onChange(of: text.wrappedValue) { _, _ in voiceDraftDidChange() }
-            .onSubmit { commitVoiceField() }
     }
 
     /// Sub-section label inside the Voice section. Visually subdues the STT vs TTS
@@ -1730,115 +1615,6 @@ struct CompanionPanelSettingsView: View {
         .hoverAffordance()
     }
 
-    private var edgeTTSSettings: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space4) {
-            Text("settings.voice.edge.disclosure")
-                .font(PickyHUDTypography.supporting)
-                .foregroundColor(DS.Colors.warningText)
-                .fixedSize(horizontal: false, vertical: true)
-                .pickyHubSelectableText()
-
-            switch edgeTTSVoiceCatalog.state {
-            case .idle, .loading:
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text("settings.voice.edge.loading")
-                        .font(PickyHUDTypography.supporting)
-                        .foregroundColor(supportingTextColor)
-                        .pickyHubSelectableText()
-                }
-            case .failed(let message):
-                Text(L10n.t("settings.voice.edge.selectedVoice", viewModel.settings.edgeTTSVoice))
-                    .font(PickyHUDTypography.supporting)
-                    .foregroundColor(supportingTextColor)
-                    .pickyHubSelectableText()
-                Text(message)
-                    .font(PickyHUDTypography.supporting)
-                    .foregroundColor(DS.Colors.destructiveText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .pickyHubSelectableText()
-                Button("settings.voice.edge.retry") { edgeTTSVoiceCatalog.refresh() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-            case .loaded:
-                edgeTTSVoicePickers
-            }
-        }
-    }
-
-    private var edgeTTSVoicePickers: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.space4) {
-            VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                fieldLabel("settings.voice.edge.language")
-                PickyNativeMenuPicker(
-                    title: L10n.t("settings.voice.edge.language"),
-                    selection: edgeTTSLocaleBinding,
-                    options: edgeTTSVoiceCatalog.locales(selectedVoice: viewModel.settings.edgeTTSVoice).map {
-                        .init(value: $0, title: edgeTTSLocaleLabel($0))
-                    }
-                )
-                .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            VStack(alignment: .leading, spacing: DS.Spacing.space2) {
-                fieldLabel("settings.voice.edge.voice")
-                PickyNativeMenuPicker(
-                    title: L10n.t("settings.voice.edge.voice"),
-                    selection: $viewModel.settings.edgeTTSVoice,
-                    options: edgeTTSMenuOptions
-                )
-                .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .onChange(of: viewModel.settings.edgeTTSVoice) { _, _ in commitVoiceField() }
-            }
-        }
-    }
-
-    private var edgeTTSMenuOptions: [PickyNativeMenuOption<String>] {
-        var options: [PickyNativeMenuOption<String>] = []
-        if !EdgeTTSVoiceCatalogProjection.isSelectedVoiceAvailable(viewModel.settings.edgeTTSVoice, voices: edgeTTSVoiceCatalog.voices) {
-            options.append(.init(value: viewModel.settings.edgeTTSVoice, title: L10n.t("settings.voice.edge.savedVoiceUnavailable", viewModel.settings.edgeTTSVoice)))
-        }
-        options += edgeTTSVoiceCatalog.voices(in: selectedEdgeTTSLocale).map {
-            .init(value: $0.shortName, title: edgeTTSVoiceLabel($0))
-        }
-        return options
-    }
-
-    private var selectedEdgeTTSLocale: String {
-        EdgeTTSVoiceCatalogProjection.selectedLocale(
-            voice: viewModel.settings.edgeTTSVoice,
-            voices: edgeTTSVoiceCatalog.voices
-        ) ?? EdgeTTSVoiceCatalogProjection.unavailableLocale
-    }
-
-    private func edgeTTSLocaleLabel(_ locale: String) -> String {
-        locale == EdgeTTSVoiceCatalogProjection.unavailableLocale
-            ? L10n.t("settings.voice.edge.localeUnavailable")
-            : edgeTTSVoiceCatalog.voices(in: locale).isEmpty
-                ? L10n.t("settings.voice.edge.localeUnavailableWithName", locale)
-                : locale
-    }
-
-    private func edgeTTSVoiceLabel(_ voice: EdgeTTSVoice) -> String {
-        guard let genderKey = EdgeTTSVoiceCatalogProjection.genderLocalizationKey(voice.gender) else {
-            return voice.friendlyName
-        }
-        return "\(voice.friendlyName) (\(L10n.t(genderKey)))"
-    }
-
-    private var edgeTTSLocaleBinding: Binding<String> {
-        Binding(
-            get: { selectedEdgeTTSLocale },
-            set: { locale in
-                guard let voice = edgeTTSVoiceCatalog.voices(in: locale).first else { return }
-                // The voice picker observes this binding and persists once.
-                viewModel.settings.edgeTTSVoice = voice.shortName
-            }
-        )
-    }
-
     private func providerPicker(title: String, capability: PickyVoiceProviderCapability, selection: Binding<PickyVoiceProviderSelection>, isEnabled: Bool = true) -> some View {
         VStack(alignment: .leading, spacing: DS.Spacing.space2) {
             fieldLabel(LocalizedStringKey(title))
@@ -1956,7 +1732,9 @@ struct CompanionPanelSettingsView: View {
         viewModel.settings.elevenLabsSTTAPIKey = elevenLabsSTTAPIKeyDraft
         viewModel.settings.elevenLabsSTTModel = elevenLabsSTTModelDraft
         viewModel.settings.elevenLabsSTTLanguage = elevenLabsSTTLanguageDraft
-        viewModel.settings.groqSTTAPIKey = groqSTTAPIKeyDraft
+        if groqSTTAPIKeyDraft != (PickySecretStore.shared.secret(for: .groqSTTAPIKey) ?? "") {
+            PickySecretStore.shared.setSecret(groqSTTAPIKeyDraft, for: .groqSTTAPIKey)
+        }
         viewModel.settings.sttVocabulary = sttVocabularyDraft
         saveImmediately(for: .voice)
     }
@@ -2091,7 +1869,7 @@ struct CompanionPanelSettingsView: View {
         elevenLabsSTTAPIKeyDraft = viewModel.settings.elevenLabsSTTAPIKey
         elevenLabsSTTModelDraft = viewModel.settings.elevenLabsSTTModel
         elevenLabsSTTLanguageDraft = viewModel.settings.elevenLabsSTTLanguage
-        groqSTTAPIKeyDraft = viewModel.settings.groqSTTAPIKey
+        groqSTTAPIKeyDraft = PickySecretStore.shared.secret(for: .groqSTTAPIKey) ?? ""
         sttVocabularyDraft = viewModel.settings.sttVocabulary
     }
 
@@ -2118,7 +1896,7 @@ struct CompanionPanelSettingsView: View {
             || elevenLabsSTTAPIKeyDraft != viewModel.settings.elevenLabsSTTAPIKey
             || elevenLabsSTTModelDraft != viewModel.settings.elevenLabsSTTModel
             || elevenLabsSTTLanguageDraft != viewModel.settings.elevenLabsSTTLanguage
-            || groqSTTAPIKeyDraft != viewModel.settings.groqSTTAPIKey
+            || groqSTTAPIKeyDraft != (PickySecretStore.shared.secret(for: .groqSTTAPIKey) ?? "")
             || sttVocabularyDraft != viewModel.settings.sttVocabulary
     }
 

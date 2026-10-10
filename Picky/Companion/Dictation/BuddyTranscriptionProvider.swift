@@ -32,7 +32,8 @@ protocol BuddyTranscriptionProvider {
 enum BuddyTranscriptionProviderFactory {
     static func makeDefaultProvider(
         settings: PickySettings = PickySettingsStore().load(),
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        secretStore: PickySecretStoring = PickySecretStore.shared
     ) -> any BuddyTranscriptionProvider {
         let requestedProvider = providerName(from: settings.sttProvider)
         let vocabulary = PickyTranscriptionVocabulary(settings: settings)
@@ -40,12 +41,11 @@ enum BuddyTranscriptionProviderFactory {
         if requestedProvider == "groq" {
             let language = settings.groqSTTLanguage.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             let modelName = GroqTranscriptionDefaults.modelName(from: settings)
-            let provider = OpenAITranscriptionProvider(
-                configuration: makeGroqSTTConfiguration(settings: settings, environment: environment),
+            let provider = GroqTranscriptionProvider(
                 preferredLanguage: language,
                 modelName: modelName,
                 vocabulary: vocabulary,
-                displayName: GroqTranscriptionDefaults.displayName
+                apiKeyProvider: { groqAPIKey(secretStore: secretStore, environment: environment) }
             )
             print("🎙️ Transcription: using provider \(provider.displayName), model: \(modelName), language: \(language ?? "auto")")
             return provider
@@ -124,13 +124,10 @@ enum BuddyTranscriptionProviderFactory {
 
     /// Groq exposes Whisper through an OpenAI-compatible API, so it reuses the
     /// OpenAI provider with a fixed base URL and its own key.
-    static func makeGroqSTTConfiguration(
-        settings: PickySettings,
-        environment: [String: String]
-    ) -> OpenAIAudioConfiguration {
-        let apiKey = settings.groqSTTAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    /// The Settings key (Keychain) wins; `GROQ_API_KEY` is the fallback.
+    static func groqAPIKey(secretStore: PickySecretStoring, environment: [String: String]) -> String? {
+        secretStore.secret(for: .groqSTTAPIKey)
             ?? (environment.isEmpty ? nil : AzureOpenAIKeychainStore.value(for: "GROQ_API_KEY", environment: environment))
-        return OpenAIAudioConfiguration(apiKey: apiKey, baseURL: GroqTranscriptionDefaults.baseURL)
     }
 
     private static func providerName(from selection: PickyVoiceProviderSelection) -> String? {
@@ -170,5 +167,61 @@ enum GroqTranscriptionDefaults {
 
     static func modelName(from settings: PickySettings) -> String {
         settings.groqSTTModel.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? accurateModelName
+    }
+}
+
+/// Groq Whisper through the OpenAI-compatible transcription API. The key is
+/// read from Keychain on every use, so saving a new key in Settings applies
+/// to the next dictation without rebuilding the voice stack.
+final class GroqTranscriptionProvider: BuddyTranscriptionProvider {
+    let displayName = GroqTranscriptionDefaults.displayName
+    let requiresSpeechRecognitionPermission = false
+
+    private let preferredLanguage: String?
+    private let modelName: String
+    private let vocabulary: PickyTranscriptionVocabulary?
+    private let apiKeyProvider: () -> String?
+    private let urlSession: URLSession
+
+    init(
+        preferredLanguage: String?,
+        modelName: String,
+        vocabulary: PickyTranscriptionVocabulary?,
+        apiKeyProvider: @escaping () -> String?,
+        urlSession: URLSession = .shared
+    ) {
+        self.preferredLanguage = preferredLanguage
+        self.modelName = modelName
+        self.vocabulary = vocabulary
+        self.apiKeyProvider = apiKeyProvider
+        self.urlSession = urlSession
+    }
+
+    var configuration: OpenAIAudioConfiguration {
+        OpenAIAudioConfiguration(apiKey: apiKeyProvider(), baseURL: GroqTranscriptionDefaults.baseURL)
+    }
+
+    var isConfigured: Bool { configuration.isConfigured }
+    var unavailableExplanation: String? { isConfigured ? nil : "Groq speech recognition is missing: api key." }
+
+    func startStreamingSession(
+        keyterms: [String],
+        onTranscriptUpdate: @escaping (String) -> Void,
+        onFinalTranscriptReady: @escaping (String) -> Void,
+        onError: @escaping (Error) -> Void
+    ) async throws -> any BuddyStreamingTranscriptionSession {
+        try await OpenAITranscriptionProvider(
+            configuration: configuration,
+            preferredLanguage: preferredLanguage,
+            modelName: modelName,
+            vocabulary: vocabulary,
+            displayName: displayName,
+            urlSession: urlSession
+        ).startStreamingSession(
+            keyterms: keyterms,
+            onTranscriptUpdate: onTranscriptUpdate,
+            onFinalTranscriptReady: onFinalTranscriptReady,
+            onError: onError
+        )
     }
 }

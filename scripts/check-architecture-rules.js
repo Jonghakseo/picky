@@ -978,7 +978,7 @@ function checkFileSizeRatchet() {
     ["Picky/PickySessionViewModel.swift", 2255],
     ["Picky/Companion/CompanionManager.swift", 2370],
     ["Picky/Interaction/PickyInteractionReducer.swift", 1370],
-    ["Picky/Hub/Settings/CompanionPanelSettingsView.swift", 1982],
+    ["Picky/Hub/Settings/CompanionPanelSettingsView.swift", 1923],
     ["Picky/Overlay/BlueCursorView.swift", 1700],
     ["Picky/Protocol/PickyAgentProtocol.swift", 1326],
     ["agentd/src/session-supervisor.ts", 1992],

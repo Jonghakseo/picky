@@ -127,7 +127,7 @@ const MIME = {
 async function buildSite() {
   rmSync(siteDir, { recursive: true, force: true });
   await new Promise((done, fail) => {
-    const child = spawn(process.execPath, [join(webDir, "build.mjs"), "--out", siteDir], { stdio: "inherit" });
+    const child = spawn(process.execPath, [join(webDir, "build.mjs"), "--demo", "--out", siteDir], { stdio: "inherit" });
     child.on("exit", (code) => (code === 0 ? done() : fail(new Error(`web build failed (${code})`))));
   });
 }

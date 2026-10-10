@@ -546,15 +546,17 @@
   font-variant-numeric: tabular-nums;
   color: var(--ds-color-text-tertiary);
   white-space: nowrap;
-  /* Hover-only on the Mac; on the phone it appears on tap. */
-  visibility: hidden;
+  /* Hover-only on the Mac; on the phone it appears on tap. opacity keeps the
+   * time in the accessibility tree, which visibility: hidden would remove. */
+  opacity: 0;
 }
 
 /* "보내는 중": pinned, shown without any interaction.
  * PickyBubbleTimestamp.swift:42 isPinned = true */
 .sendtime--pinned,
-.row--tapped .sendtime {
-  visibility: visible;
+.row--tapped .sendtime,
+.row:focus-within .sendtime {
+  opacity: 1;
 }
 
 .sendtime svg {
@@ -570,7 +572,7 @@
   position: absolute;
   top: 5px;
   right: 5px;
-  display: none;
+  display: grid;
   place-items: center;
   width: 22px;
   height: 22px;
@@ -578,10 +580,18 @@
   background: color-mix(in srgb, var(--ds-color-surface1) 78%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ds-color-border-subtle) 55%, transparent);
   color: var(--ds-color-text-secondary);
+  /* Hidden until the bubble is tapped or the button takes keyboard focus. It
+   * stays focusable and in the accessibility tree; pointer-events keeps the
+   * invisible button (and its enlarged hit area) from eating taps meant for
+   * the bubble. */
+  opacity: 0;
+  pointer-events: none;
 }
 
-.row--tapped .open-report {
-  display: grid;
+.row--tapped .open-report,
+.bubble--agent:focus-within .open-report {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* 22pt is below the 44pt touch minimum; grow the hit area, keep the visual. */

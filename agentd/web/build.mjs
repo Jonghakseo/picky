@@ -4,6 +4,8 @@
 //   node web/build.mjs            production build (minified, hashed assets)
 //   node web/build.mjs --dev      readable build with inline source maps
 //   node web/build.mjs --watch    dev build, rebuilt on change
+//   node web/build.mjs --demo     production build that keeps the ?demo=1 fixtures
+//                                 (screenshot tooling only; --dev and --watch keep them too)
 //   node web/build.mjs --out DIR  write somewhere else
 //
 // Steps: generate the string catalog from Picky/Resources/Localizable.xcstrings
@@ -26,6 +28,10 @@ const repoDir = dirname(agentdDir);
 const args = process.argv.slice(2);
 const watch = args.includes("--watch");
 const dev = watch || args.includes("--dev");
+// The ?demo=1 fixtures ship only in builds made for development or screenshots.
+// A production bundle defines this false, so the demo entry point and its
+// fixtures are dead-code eliminated and `?demo=1` is ignored.
+const demo = dev || args.includes("--demo");
 const outIndex = args.indexOf("--out");
 const outDir = outIndex >= 0 ? args[outIndex + 1] : join(agentdDir, "dist", "web");
 const generatedDir = join(webDir, ".generated");
@@ -152,7 +158,7 @@ const shared = {
   minify: !dev,
   sourcemap: dev ? "inline" : false,
   legalComments: "none",
-  define: { "process.env.NODE_ENV": JSON.stringify(dev ? "development" : "production") },
+  define: { "process.env.NODE_ENV": JSON.stringify(dev ? "development" : "production"), __PICKY_DEMO__: JSON.stringify(demo) },
   logLevel: "warning",
 };
 

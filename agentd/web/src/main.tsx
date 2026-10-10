@@ -17,9 +17,11 @@ import type { Transport } from "./app/transport";
 import { App } from "./screens/App";
 
 declare const __BUILD_ID__: string;
+/** `false` in production builds (web/build.mjs), which drops the demo fixtures from the bundle. */
+declare const __PICKY_DEMO__: boolean;
 
 const params = new URLSearchParams(location.search);
-const demo = params.get("demo") === "1";
+const demo = __PICKY_DEMO__ && params.get("demo") === "1";
 
 // Same review parameters the prototypes accept, so a screenshot of the app and
 // a screenshot of the mockup can be compared directly.
@@ -35,7 +37,7 @@ document.documentElement.lang = locale;
 let platform = currentPlatform();
 
 async function boot(): Promise<void> {
-  if (demo) {
+  if (__PICKY_DEMO__ && demo) {
     const [{ DemoTransport }, scenarios] = await Promise.all([import("./demo/demo-transport"), import("./demo/scenario")]);
     const scenario = scenarios.readScenario(params.get("state"));
     platform = scenarios.scenarioPlatform(scenario, platform);

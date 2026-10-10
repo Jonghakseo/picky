@@ -793,7 +793,7 @@ Picky is local-first and keeps everything under one durable folder:
 
 Only **screenshots** are written outside this tree, to the per-user temporary directory (`FileManager.default.temporaryDirectory/Picky/Screenshots`), so capture bytes do not accumulate in the durable folder.
 
-**API keys typed into Settings are stored in plain JSON** inside `settings.json` (OpenAI/Azure/ElevenLabs keys, custom base URLs). When Picky needs a credential, it resolves it in this order: **(1) the matching `settings.json` field if non-empty, (2) the corresponding environment variable, (3) a consolidated Keychain entry at service `com.jonghakseo.picky.azure-openai` (account `AZURE_OPENAI_VOICE_CONFIG`)** — so env and Keychain are *fallbacks*, not overrides. If you want to keep secrets out of plain JSON, clear the Settings field first, then populate the env var or Keychain entry. Picky never writes to the Keychain itself; you populate the Azure entry by hand (for example with `security add-generic-password`). If you back up or share `settings.json`, scrub the secret fields first.
+**API keys typed into Settings are stored in plain JSON** inside `settings.json` (OpenAI/Azure/ElevenLabs/Groq keys, custom base URLs). When Picky needs a credential, it resolves it in this order: **(1) the matching `settings.json` field if non-empty, (2) the corresponding environment variable, (3) a consolidated Keychain entry at service `com.jonghakseo.picky.azure-openai` (account `AZURE_OPENAI_VOICE_CONFIG`)** — so env and Keychain are *fallbacks*, not overrides. If you want to keep secrets out of plain JSON, clear the Settings field first, then populate the env var or Keychain entry. Picky never writes to the Keychain itself; you populate the Azure entry by hand (for example with `security add-generic-password`). If you back up or share `settings.json`, scrub the secret fields first.
 
 **Reinstalling Picky.app keeps everything above.** macOS only replaces the bundle in `/Applications`; the Application Support tree and any Keychain entries you populated survive. The Alpha build's "reinstall the latest alpha package" notice does not touch your settings, sessions, or workspace.
 
@@ -980,21 +980,35 @@ Tool changes apply to the main agent immediately and interrupt any in-progress t
 ### 13.6 Voice (STT & TTS, Voice and input)
 
 Picky supports Apple/macOS built-in, OpenAI direct (`api.openai.com`), Azure
-OpenAI, and ElevenLabs for speech recognition and synthesis. **Edge TTS
+OpenAI, and ElevenLabs for speech recognition and synthesis. **Groq** is an
+additional transcription-only provider with a free tier. **Edge TTS
 (Online)** is an additional playback-only, explicit opt-in provider; it sends
 spoken response text to Microsoft Edge Read Aloud through local `picky-agentd`.
 Each provider's relevant settings appear only when that provider is selected.
 
 | Setting | Values / behavior |
 | --- | --- |
-| STT provider | Apple Speech (default), OpenAI, Azure OpenAI, ElevenLabs. Apple Speech uses the on-device `SFSpeechRecognizer` (offline). OpenAI uses `gpt-4o-transcribe` against `api.openai.com`. Azure OpenAI uses your deployment URL. ElevenLabs uses `scribe_v2` against `api.elevenlabs.io` (the legacy `scribe_v1` is deprecated as of 2026). |
+| STT provider | Apple Speech (default), Groq (free), OpenAI, Azure OpenAI, ElevenLabs. Each provider shows a one-line note on cost and where speech is sent. Apple Speech uses the on-device `SFSpeechRecognizer` (offline) and offers a **Switch to Groq** shortcut. Groq uses Whisper through `api.groq.com/openai`. OpenAI uses `gpt-4o-transcribe` against `api.openai.com`. Azure OpenAI uses your deployment URL. ElevenLabs uses `scribe_v2` against `api.elevenlabs.io` (the legacy `scribe_v1` is deprecated as of 2026). |
 | Enable spoken replies (TTS) | On/off. When off, text replies still appear but audio playback is skipped. Long narrated replies can begin playing sentence by sentence while the remaining response is still streaming. TTS reads rendered Markdown text rather than syntax markers (`**`, headings, list prefixes, or link destinations); inline code text is read, while fenced code blocks are skipped. |
 | TTS provider | macOS Speech (default), OpenAI, Azure OpenAI, ElevenLabs, Edge TTS (Online, explicit opt-in; playback only). macOS Speech uses the system `NSSpeechSynthesizer` voice. OpenAI uses `gpt-4o-mini-tts` against `api.openai.com`. ElevenLabs uses `eleven_multilingual_v2` against `api.elevenlabs.io` by default. Edge TTS sends spoken response text to Microsoft Edge Read Aloud through local `picky-agentd`. |
 | Open macOS Speech Settings | Opens the system Spoken Content settings for local TTS voice selection. |
 
+Groq STT fields (when STT provider = Groq):
+
+- API key (`gsk_…`). Leave empty to fall back to `GROQ_API_KEY` from the environment or Keychain. When no key is entered, Settings shows a three-step guide and an **Open Groq console** button (`console.groq.com/keys`).
+- **Check connection** sends one second of silence to Groq and reports success with the response time, a rejected key (401/403), a usage limit (429), or a network/HTTP failure. Picky does not switch to Apple Speech automatically when the limit is reached.
+- Model: **Accuracy first** (`whisper-large-v3`, default) or **Speed first** (`whisper-large-v3-turbo`). Both share the same free limits.
+- Spoken language: Detect automatically (default), Korean, English, Japanese, or Chinese.
+- Free tier (Groq's published limits when this feature shipped): 2,000 requests and 8 hours of audio per day, 20 requests per minute. Limits apply per Groq organization.
+
+Frequent words (Groq, OpenAI, and Azure STT):
+
+- **Frequent words** — comma- or newline-separated spellings sent as transcription hints, default `Picky, Pickle`. They are placed before automatic hints so they are never dropped.
+- **Also send the current app and window names** — on by default. When off, only the frequent words are sent as hints.
+
 OpenAI STT fields (when STT provider = OpenAI):
 
-- OpenAI STT API key (`sk-…`)
+- OpenAI STT API key (`sk-…`). Like Groq, Settings shows a key guide, an **Open OpenAI console** button, and **Check connection**.
 - OpenAI STT model — leave blank for the recommended `gpt-4o-transcribe` default
 - OpenAI STT preferred language — ISO-639-1 code or empty for auto detect
 - OpenAI STT base URL — empty uses `https://api.openai.com`. Set this to point Picky at any OpenAI-compatible HTTP server (LocalAI, openai-edge-tts, Together, Groq, self-hosted inference, etc.). A trailing `/v1` is stripped automatically. Picky speaks the standard `/v1/audio/transcriptions` protocol — proxy stability is your responsibility.

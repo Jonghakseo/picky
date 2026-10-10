@@ -65,6 +65,22 @@ private final class FakeWebSocketFactory: PickyWebSocketTaskMaking {
     }
 }
 
+private final class SequencedWebSocketFactory: PickyWebSocketTaskMaking {
+    private var tasks: [FakeWebSocketTask]
+
+    init(tasks: [FakeWebSocketTask]) { self.tasks = tasks }
+
+    func makeWebSocketTask(url: URL, token: String) -> PickyWebSocketTask {
+        tasks.isEmpty ? FakeWebSocketTask() : tasks.removeFirst()
+    }
+}
+
+@MainActor
+private final class ReconnectDelayRecorder {
+    private(set) var delays: [TimeInterval] = []
+    func record(_ delay: TimeInterval) { delays.append(delay) }
+}
+
 private enum EventJSON {
     static func hello() -> String {
         """
@@ -105,6 +121,32 @@ struct PickyAgentClientTests {
             return
         }
         #expect(text.contains("\"type\":\"listMainMessages\"") || text.contains("\"type\" : \"listMainMessages\""))
+    }
+
+    @Test func reconnectBacksOffExponentiallyUpToTheCapAndResetsAfterHello() async throws {
+        func dropped() -> FakeWebSocketTask {
+            let task = FakeWebSocketTask()
+            task.enqueue(.failure(URLError(.networkConnectionLost)))
+            return task
+        }
+        let helloThenDrop = FakeWebSocketTask()
+        helloThenDrop.enqueue(.success(.string(EventJSON.hello())))
+        helloThenDrop.enqueue(.failure(URLError(.networkConnectionLost)))
+        let recorder = ReconnectDelayRecorder()
+        let client = WebSocketPickyAgentClient(
+            configuration: .init(port: 19001, token: "secret", reconnectDelay: 1, maxReconnectDelay: 4),
+            factory: SequencedWebSocketFactory(tasks: [dropped(), dropped(), dropped(), dropped(), helloThenDrop, dropped()]),
+            reconnectSleep: { recorder.record($0) }
+        )
+
+        await client.connect()
+        try await withPickyTestTimeout("reconnect delays") {
+            while recorder.delays.count < 6 { await Task.yield() }
+        }
+        client.disconnect()
+
+        // Four drops in a row double up to the cap; the successful hello starts the sequence over.
+        #expect(recorder.delays == [1, 2, 4, 4, 1, 2])
     }
 
     @Test func sendWaitsForHelloWhenCommandFollowsConnectImmediately() async throws {

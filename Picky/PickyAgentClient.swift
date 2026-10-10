@@ -310,12 +310,16 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
         var host = "127.0.0.1"
         var port: Int
         var token: String
+        /// Wait before the first reconnect attempt. Each further consecutive failure doubles it,
+        /// up to `maxReconnectDelay`; a received `hello` starts over from this value.
         var reconnectDelay: TimeInterval = 1
         /// Grace period for commands issued immediately after `connect()`. URLSession's
         /// `resume()` returns before the websocket server's hello frame is received, so callers
         /// that spawn a fresh child daemon and immediately send the first command need `send` to
         /// wait briefly for the connection to become usable.
         var connectionReadyTimeout: TimeInterval = 5
+        /// Ceiling for the reconnect backoff. Never lower than `reconnectDelay`.
+        var maxReconnectDelay: TimeInterval = 30
 
         var url: URL {
             var components = URLComponents()
@@ -346,12 +350,22 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
     /// logs so the diagnostics bundle reveals reconnect storms (e.g. daemon
     /// crashing and being respawned).
     private var connectAttemptCount = 0
+    /// Receive-loop drops since the last `hello`. Drives the reconnect backoff.
+    private var consecutiveReconnectFailures = 0
+    private let reconnectSleep: (TimeInterval) async -> Void
     private let continuation: AsyncStream<PickyClientEvent>.Continuation
     let events: AsyncStream<PickyClientEvent>
 
-    init(configuration: Configuration, factory: PickyWebSocketTaskMaking = URLSessionPickyWebSocketTaskFactory()) {
+    init(
+        configuration: Configuration,
+        factory: PickyWebSocketTaskMaking = URLSessionPickyWebSocketTaskFactory(),
+        reconnectSleep: @escaping (TimeInterval) async -> Void = { delay in
+            try? await Task.sleep(nanoseconds: UInt64(max(delay, 0) * 1_000_000_000))
+        }
+    ) {
         self.configuration = configuration
         self.factory = factory
+        self.reconnectSleep = reconnectSleep
         var continuation: AsyncStream<PickyClientEvent>.Continuation!
         self.events = AsyncStream { continuation = $0 }
         self.continuation = continuation
@@ -413,7 +427,16 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         connected = false
+        consecutiveReconnectFailures = 0
         continuation.yield(.disconnected)
+    }
+
+    /// Capped exponential backoff: `base`, `2 * base`, `4 * base`, ... never above `maximum`.
+    /// `consecutiveFailures` is the number of drops since the last successful `hello`, minus one.
+    static func reconnectDelay(base: TimeInterval, maximum: TimeInterval, consecutiveFailures: Int) -> TimeInterval {
+        let ceiling = max(maximum, base)
+        let doublings = Double(min(max(consecutiveFailures, 0), 32))
+        return min(base * pow(2, doublings), ceiling)
     }
 
     private func startReceiveLoop(_ socket: PickyWebSocketTask) {
@@ -437,7 +460,15 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
                     self.connected = false
                     self.task = nil
                     self.continuation.yield(.disconnected)
-                    try? await Task.sleep(nanoseconds: UInt64(self.configuration.reconnectDelay * 1_000_000_000))
+                    guard !Task.isCancelled else { return }
+                    let delay = Self.reconnectDelay(
+                        base: self.configuration.reconnectDelay,
+                        maximum: self.configuration.maxReconnectDelay,
+                        consecutiveFailures: self.consecutiveReconnectFailures
+                    )
+                    self.consecutiveReconnectFailures += 1
+                    pickyAgentClientLog("reconnecting in \(delay)s consecutiveFailures=\(self.consecutiveReconnectFailures)")
+                    await self.reconnectSleep(delay)
                     if !Task.isCancelled { await self.connect() }
                     return
                 }
@@ -480,6 +511,7 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
             let event = try frame.result.get()
             if !connected, case .hello = event.event {
                 connected = true
+                consecutiveReconnectFailures = 0
                 let elapsedMs = connectStartedAt.map { Int(Date().timeIntervalSince($0) * 1000) } ?? -1
                 pickyAgentClientLog("connected ws://\(configuration.host):\(configuration.port) elapsedSinceConnectMs=\(elapsedMs)")
                 continuation.yield(.connected)

@@ -25,6 +25,9 @@ class PackageBundleIdentityTests(unittest.TestCase):
             shutil.copytree(REPO / "scripts/lib", scripts / "lib")
             (root / "agentd").mkdir()
             (root / "agentd/package.json").write_text("{}")
+            for notice in ("THIRD_PARTY_NOTICES.md", "LICENSE"):
+                shutil.copy2(REPO / notice, root / notice)
+            shutil.copytree(REPO / "licenses", root / "licenses")
             shutil.copytree(REPO / "Picky.xcodeproj", root / "Picky.xcodeproj")
             source = root / "fixture.c"
             source.write_text("int main(void) { return 0; }\n")

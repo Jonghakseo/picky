@@ -416,6 +416,25 @@ if [[ -d "${ROOT_DIR}/pi-skills" ]]; then
   /bin/cp -Rc "${ROOT_DIR}/pi-skills" "${PACKAGED_APP}/Contents/Resources/pi-skills"
 fi
 
+# Ship third-party notices (and Picky's own license) with the app. Redistributing
+# MIT, Apache, BSD and similar components requires their license texts to travel
+# with the binary. Copied before codesign so the resource seal covers them.
+step_license_dst="${PACKAGED_APP}/Contents/Resources"
+mkdir -p "${step_license_dst}"
+for notice_file in THIRD_PARTY_NOTICES.md LICENSE; do
+  if [[ ! -f "${ROOT_DIR}/${notice_file}" ]]; then
+    echo "❌ ${notice_file} not found at ${ROOT_DIR}/${notice_file}" >&2
+    exit 1
+  fi
+  /bin/cp -f "${ROOT_DIR}/${notice_file}" "${step_license_dst}/${notice_file}"
+done
+if [[ ! -d "${ROOT_DIR}/licenses" ]]; then
+  echo "❌ licenses/ directory not found at ${ROOT_DIR}/licenses" >&2
+  exit 1
+fi
+rm -rf "${step_license_dst}/licenses"
+/bin/cp -Rc "${ROOT_DIR}/licenses" "${step_license_dst}/licenses"
+
 # Bundle the watchdog alert helper. Kept as a tiny standalone executable so
 # the watchdog can spawn a recovery dialog without depending on the main
 # process (which is unresponsive by definition when the watchdog fires).

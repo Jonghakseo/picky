@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   PICKY_CLI_CONTEXT_ENV_VAR,
   PI_SESSION_ID_ENV_VAR,
@@ -189,16 +189,22 @@ describe("caller context injection into tool calls", () => {
   });
 
   it("does not put the identity in the daemon's own environment", async () => {
+    // Agents run this suite inside a Pickle shell, which already exports the
+    // variable. Clear it so the assertion only sees what the extension writes.
+    vi.stubEnv(PICKY_CLI_CONTEXT_ENV_VAR, undefined);
     const binding = createPickyCliCallerBinding("pickle-1");
-    const { toolCall } = bindExtension(binding);
-    const event = bashCall("true");
+    try {
+      const { toolCall } = bindExtension(binding);
+      const event = bashCall("true");
 
-    toolCall(event, sessionContext("pi-1"));
-    await readContextFromShell(event.input.command as string, "pi-1");
+      toolCall(event, sessionContext("pi-1"));
+      await readContextFromShell(event.input.command as string, "pi-1");
 
-    expect(process.env[PICKY_CLI_CONTEXT_ENV_VAR]).toBeUndefined();
-
-    binding.dispose();
+      expect(process.env[PICKY_CLI_CONTEXT_ENV_VAR]).toBeUndefined();
+    } finally {
+      binding.dispose();
+      vi.unstubAllEnvs();
+    }
   });
 
   it("survives a hostile value in a real shell instead of executing it", async () => {

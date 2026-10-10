@@ -4210,13 +4210,13 @@ describe("SessionSupervisor", () => {
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
 
-    const session = await supervisor.create(context("See https://github.com/acme/repo/issues/2777 and https://example.slack.com/archives/C012ZMHLPDW/p1777763920621249"));
-    await supervisor.followUp(session.id, "Notion https://www.notion.so/example/355d62c6956180cf8695dcdf5c4ff226?source=copy_link");
+    const session = await supervisor.create(context("See https://github.com/acme/repo/issues/2777 and https://example.slack.com/archives/C0000000000/p1700000000000000"));
+    await supervisor.followUp(session.id, "Notion https://www.notion.so/example/11111111111111111111111111111111?source=copy_link");
 
     const updated = supervisor.get(session.id)!;
     expect(updated.artifacts.some((artifact) => artifact.kind === "github" && artifact.title === "#2777" && artifact.url === "https://github.com/acme/repo/issues/2777")).toBe(true);
-    expect(updated.artifacts.some((artifact) => artifact.kind === "slack" && artifact.url === "https://example.slack.com/archives/C012ZMHLPDW/p1777763920621249")).toBe(true);
-    expect(updated.artifacts.some((artifact) => artifact.kind === "notion" && artifact.url === "https://www.notion.so/example/355d62c6956180cf8695dcdf5c4ff226")).toBe(true);
+    expect(updated.artifacts.some((artifact) => artifact.kind === "slack" && artifact.url === "https://example.slack.com/archives/C0000000000/p1700000000000000")).toBe(true);
+    expect(updated.artifacts.some((artifact) => artifact.kind === "notion" && artifact.url === "https://www.notion.so/example/11111111111111111111111111111111")).toBe(true);
   });
 
   it("does not trust user-controlled multiline follow-up text as a Pi session file marker", async () => {
@@ -6220,13 +6220,13 @@ describe("SessionSupervisor", () => {
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     const session = await supervisor.create(context("create pr"));
 
-    runtime.handle?.emit({ type: "assistant_delta", delta: "PR 생성 완료: https://github.com/example/product/pull/2993\n- 브랜치: refactor/cli-shared-arg-helpers" });
-    runtime.handle?.emit({ type: "status", status: "waiting_for_input", summary: "Awaiting next instruction", finalAnswer: "PR 생성 완료: https://github.com/example/product/pull/2993\n- 브랜치: refactor/cli-shared-arg-helpers" });
+    runtime.handle?.emit({ type: "assistant_delta", delta: "PR 생성 완료: https://github.com/example/product/pull/1006\n- 브랜치: refactor/cli-shared-arg-helpers" });
+    runtime.handle?.emit({ type: "status", status: "waiting_for_input", summary: "Awaiting next instruction", finalAnswer: "PR 생성 완료: https://github.com/example/product/pull/1006\n- 브랜치: refactor/cli-shared-arg-helpers" });
     await settle();
 
     const updated = supervisor.get(session.id)!;
     expect(updated.status).toBe("waiting_for_input");
-    expect(updated.artifacts.some((artifact) => artifact.kind === "github" && artifact.url === "https://github.com/example/product/pull/2993")).toBe(true);
+    expect(updated.artifacts.some((artifact) => artifact.kind === "github" && artifact.url === "https://github.com/example/product/pull/1006")).toBe(true);
   });
 
   it("emits terminal session meta update before terminal artifacts", async () => {

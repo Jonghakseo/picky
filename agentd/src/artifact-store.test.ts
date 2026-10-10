@@ -3,7 +3,7 @@ import { extractChangedFilesFromExplicitText, extractGithubPullRequestUrls, extr
 
 const supportedSessionLinks = [
   { label: "GitHub", kind: "github", title: "#42", url: "https://github.com/acme/repo/pull/42" },
-  { label: "Slack", kind: "slack", title: "Slack", url: "https://example.slack.com/archives/C012ZMHLPDW/p1777763920621249" },
+  { label: "Slack", kind: "slack", title: "Slack", url: "https://example.slack.com/archives/C0000000000/p1700000000000000" },
   { label: "Jira", kind: "jira", title: "COM-123", url: "https://example.atlassian.net/browse/COM-123" },
   { label: "Sentry", kind: "sentry", title: "Sentry", url: "https://example.sentry.io/issues/1234567890/" },
   { label: "Linear", kind: "linear", title: "ENG-456", url: "https://linear.app/acme/issue/ENG-456/fix-checkout" },
@@ -12,7 +12,7 @@ const supportedSessionLinks = [
   { label: "Google Sheets", kind: "googleSheets", title: "Sheets", url: "https://docs.google.com/spreadsheets/d/sheet123/edit" },
   { label: "Google Slides", kind: "googleSlides", title: "Slides", url: "https://docs.google.com/presentation/d/slide123/edit" },
   { label: "Google Drive", kind: "googleDrive", title: "Drive", url: "https://drive.google.com/file/d/file123/view" },
-  { label: "Notion", kind: "notion", title: "Notion", url: "https://www.notion.so/example/355d62c6956180cf8695dcdf5c4ff226" },
+  { label: "Notion", kind: "notion", title: "Notion", url: "https://www.notion.so/example/11111111111111111111111111111111" },
   { label: "Generic", kind: "link", title: "example.com", url: "https://example.com/docs?tab=mac#install" },
 ] as const;
 
@@ -22,10 +22,10 @@ describe("session link extraction", () => {
     expect(githubPullRequestTitle("https://github.com/acme/repo/issues/2777")).toBe("#2777");
     expect(extractSessionLinks([
       "GitHub https://github.com/acme/repo/issues/2777",
-      "Slack https://example.slack.com/archives/C012ZMHLPDW/p1777763920621249",
-      "Notion https://www.notion.so/example/355d62c6956180cf8695dcdf5c4ff226?source=copy_link",
-      "Notion duplicate https://www.notion.so/example/355d62c6956180cf8695dcdf5c4ff226",
-      "Notion app https://app.notion.com/p/351d62c6956180498d13e3494b488192",
+      "Slack https://example.slack.com/archives/C0000000000/p1700000000000000",
+      "Notion https://www.notion.so/example/11111111111111111111111111111111?source=copy_link",
+      "Notion duplicate https://www.notion.so/example/11111111111111111111111111111111",
+      "Notion app https://app.notion.com/p/22222222222222222222222222222222",
       "Jira https://example.atlassian.net/browse/COM-123?focusedCommentId=1",
       "Sentry https://example.sentry.io/issues/1234567890/?project=1",
       "Linear https://linear.app/acme/issue/ENG-456/fix-checkout",
@@ -36,9 +36,9 @@ describe("session link extraction", () => {
       "Drive https://drive.google.com/file/d/file123/view",
     ].join("\n"))).toEqual([
       { kind: "github", title: "#2777", url: "https://github.com/acme/repo/issues/2777" },
-      { kind: "slack", title: "Slack", url: "https://example.slack.com/archives/C012ZMHLPDW/p1777763920621249" },
-      { kind: "notion", title: "Notion", url: "https://www.notion.so/example/355d62c6956180cf8695dcdf5c4ff226" },
-      { kind: "notion", title: "Notion", url: "https://app.notion.com/p/351d62c6956180498d13e3494b488192" },
+      { kind: "slack", title: "Slack", url: "https://example.slack.com/archives/C0000000000/p1700000000000000" },
+      { kind: "notion", title: "Notion", url: "https://www.notion.so/example/11111111111111111111111111111111" },
+      { kind: "notion", title: "Notion", url: "https://app.notion.com/p/22222222222222222222222222222222" },
       { kind: "jira", title: "COM-123", url: "https://example.atlassian.net/browse/COM-123" },
       { kind: "sentry", title: "Sentry", url: "https://example.sentry.io/issues/1234567890/" },
       { kind: "linear", title: "ENG-456", url: "https://linear.app/acme/issue/ENG-456/fix-checkout" },
@@ -87,13 +87,13 @@ describe("session link extraction", () => {
 
   it("stops links before JSON delimiters and escaped newlines", () => {
     expect(extractSessionLinks([
-      '{"url":"https://www.notion.so/example/355d62c6956180cf8695dcdf5c4ff226","kind":"notion"}',
-      'Transcript https://www.notion.so/example/451d62c6956180498d13e3494b488193\\nnext line',
-      '{"url":"https://app.notion.com/p/351d62c6956180498d13e3494b488192"}',
+      '{"url":"https://www.notion.so/example/11111111111111111111111111111111","kind":"notion"}',
+      'Transcript https://www.notion.so/example/33333333333333333333333333333333\\nnext line',
+      '{"url":"https://app.notion.com/p/22222222222222222222222222222222"}',
     ].join("\n"))).toEqual([
-      { kind: "notion", title: "Notion", url: "https://www.notion.so/example/355d62c6956180cf8695dcdf5c4ff226" },
-      { kind: "notion", title: "Notion", url: "https://www.notion.so/example/451d62c6956180498d13e3494b488193" },
-      { kind: "notion", title: "Notion", url: "https://app.notion.com/p/351d62c6956180498d13e3494b488192" },
+      { kind: "notion", title: "Notion", url: "https://www.notion.so/example/11111111111111111111111111111111" },
+      { kind: "notion", title: "Notion", url: "https://www.notion.so/example/33333333333333333333333333333333" },
+      { kind: "notion", title: "Notion", url: "https://app.notion.com/p/22222222222222222222222222222222" },
     ]);
   });
 
@@ -119,14 +119,14 @@ describe("session link extraction", () => {
   it("extracts links from a synthetic agentd activity log fixture", () => {
     const log = [
       '[picky-agentd] session:event {"type":"artifact","url":"https://github.com/acme/repo/pull/42","kind":"github"}',
-      '[picky-agentd] tool:stdout link=https:\\/\\/example.slack.com\\/archives\\/C012ZMHLPDW\\/p1777763920621249, status=ok',
+      '[picky-agentd] tool:stdout link=https:\\/\\/example.slack.com\\/archives\\/C0000000000\\/p1700000000000000, status=ok',
       '[picky-agentd] assistant:message &quot;https://example.sentry.io/issues/1234567890/&quot;\\nrendered',
       '[picky-agentd] report:links https://www.figma.com/design/abc123/Product\nnext line',
     ].join("\n");
 
     expect(extractSessionLinks(log)).toEqual([
       { kind: "github", title: "#42", url: "https://github.com/acme/repo/pull/42" },
-      { kind: "slack", title: "Slack", url: "https://example.slack.com/archives/C012ZMHLPDW/p1777763920621249" },
+      { kind: "slack", title: "Slack", url: "https://example.slack.com/archives/C0000000000/p1700000000000000" },
       { kind: "sentry", title: "Sentry", url: "https://example.sentry.io/issues/1234567890/" },
       { kind: "figma", title: "Figma", url: "https://www.figma.com/design/abc123/Product" },
     ]);
@@ -135,12 +135,12 @@ describe("session link extraction", () => {
   it("extracts markdown-wrapped links without their closing parentheses", () => {
     expect(extractSessionLinks([
       "PR [#123](https://github.com/creatrip/picky/pull/123)",
-      "Slack [thread](https://example.slack.com/archives/C012ZMHLPDW/p1777763920621249)",
+      "Slack [thread](https://example.slack.com/archives/C0000000000/p1700000000000000)",
       "Sentry [issue](https://example.sentry.io/issues/1234567890/)",
       "Notion [page](https://www.notion.so/foo(bar))",
     ].join("\n"))).toEqual([
       { kind: "github", title: "#123", url: "https://github.com/creatrip/picky/pull/123" },
-      { kind: "slack", title: "Slack", url: "https://example.slack.com/archives/C012ZMHLPDW/p1777763920621249" },
+      { kind: "slack", title: "Slack", url: "https://example.slack.com/archives/C0000000000/p1700000000000000" },
       { kind: "sentry", title: "Sentry", url: "https://example.sentry.io/issues/1234567890/" },
       { kind: "notion", title: "Notion", url: "https://www.notion.so/foo(bar)" },
     ]);
@@ -149,23 +149,23 @@ describe("session link extraction", () => {
   it("excludes closing quote and backtick wrappers from links", () => {
     expect(extractSessionLinks([
       "Code `https://github.com/creatrip/picky/pull/123`",
-      "Korean suffix `https://github.com/creatrip/product/pull/4969`를 참고",
+      "Korean suffix `https://github.com/acme/product/pull/1001`를 참고",
       "Quote 'https://github.com/creatrip/picky/pull/124',",
     ].join("\n"))).toEqual([
       { kind: "github", title: "#123", url: "https://github.com/creatrip/picky/pull/123" },
-      { kind: "github", title: "#4969", url: "https://github.com/creatrip/product/pull/4969" },
+      { kind: "github", title: "#1001", url: "https://github.com/acme/product/pull/1001" },
       { kind: "github", title: "#124", url: "https://github.com/creatrip/picky/pull/124" },
     ]);
   });
 
   it("excludes markdown emphasis wrappers from links", () => {
     expect(extractSessionLinks([
-      "Bold **https://github.com/creatrip/product/pull/4845**",
+      "Bold **https://github.com/acme/product/pull/1002**",
       "Italic *https://github.com/creatrip/picky/pull/123*",
       "Strike ~~https://github.com/creatrip/picky/pull/124~~",
       "**PR: https://github.com/creatrip/picky/issues/125**",
     ].join("\n"))).toEqual([
-      { kind: "github", title: "#4845", url: "https://github.com/creatrip/product/pull/4845" },
+      { kind: "github", title: "#1002", url: "https://github.com/acme/product/pull/1002" },
       { kind: "github", title: "#123", url: "https://github.com/creatrip/picky/pull/123" },
       { kind: "github", title: "#124", url: "https://github.com/creatrip/picky/pull/124" },
       { kind: "github", title: "#125", url: "https://github.com/creatrip/picky/issues/125" },
@@ -177,11 +177,11 @@ describe("session link extraction", () => {
       "기형 쿼리 `f=webp 750w, https://...` 가 존재",
       "`f=webp16w,https://...?d=32` 형태",
       "Local http://localhost:3000/health and http://127.0.0.1:8080/status",
-      "Real https://cf.creatrip.com/original/blog/1491/b0e.jpg",
+      "Real https://cdn.example.com/original/blog/1491/b0e.jpg",
     ].join("\n"))).toEqual([
       { kind: "link", title: "localhost", url: "http://localhost:3000/health" },
       { kind: "link", title: "127.0.0.1", url: "http://127.0.0.1:8080/status" },
-      { kind: "link", title: "cf.creatrip.com", url: "https://cf.creatrip.com/original/blog/1491/b0e.jpg" },
+      { kind: "link", title: "cdn.example.com", url: "https://cdn.example.com/original/blog/1491/b0e.jpg" },
     ]);
   });
 

@@ -97,9 +97,9 @@ struct PickyToolHistoryPresentationTests {
     }
 
     @Test func rowLabelsKeepToolNamesShortAndMoveDisambiguationToContext() {
-        let mcp = entry("mcp__creatrip__jira_getIssue", preview: #"{"issue_key":"COM-2605"}"#)
+        let mcp = entry("mcp__creatrip__jira_getIssue", preview: #"{"issue_key":"COM-123"}"#)
         #expect(Presentation.displayName(for: mcp) == "jira_getIssue")
-        #expect(Presentation.title(for: mcp) == "COM-2605")
+        #expect(Presentation.title(for: mcp) == "COM-123")
         #expect(Presentation.context(for: mcp) == "creatrip")
 
         let read = entry("read", preview: #"{"path":"frontend/apps/admin/src/page/Settlements.tsx"}"#)

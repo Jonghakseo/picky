@@ -590,7 +590,7 @@ struct PickyAccessibilityBrowserContextProviderTests {
             title: nil,
             description: nil,
             placeholder: nil,
-            value: "https://github.com/example/product/pull/2886"
+            value: "https://github.com/example/product/pull/1005"
         )
         let localizedSnapshot = AccessibilityBrowserContextProvider.ElementSnapshot(
             role: kAXTextFieldRole as String,
@@ -598,7 +598,7 @@ struct PickyAccessibilityBrowserContextProviderTests {
             title: nil,
             description: "주소 및 검색창",
             placeholder: nil,
-            value: "github.com/example/product/pull/2886"
+            value: "github.com/example/product/pull/1005"
         )
 
         #expect(AccessibilityBrowserContextProvider.isExplicitOmnibox(identifierSnapshot, target: target))
@@ -606,8 +606,8 @@ struct PickyAccessibilityBrowserContextProviderTests {
     }
 
     @Test func accessibilityURLHeuristicsAcceptBrowserURLValuesAndRejectPlainText() {
-        #expect(AccessibilityBrowserContextProvider.looksLikeBrowserURL("https://github.com/example/product/pull/2886"))
-        #expect(AccessibilityBrowserContextProvider.looksLikeBrowserURL("github.com/example/product/pull/2886"))
+        #expect(AccessibilityBrowserContextProvider.looksLikeBrowserURL("https://github.com/example/product/pull/1005"))
+        #expect(AccessibilityBrowserContextProvider.looksLikeBrowserURL("github.com/example/product/pull/1005"))
         #expect(AccessibilityBrowserContextProvider.looksLikeBrowserURL("localhost:5173/admin"))
         #expect(!AccessibilityBrowserContextProvider.looksLikeBrowserURL("search query with spaces"))
         #expect(!AccessibilityBrowserContextProvider.looksLikeBrowserURL("jonghak@example.com"))

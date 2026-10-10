@@ -203,10 +203,10 @@ struct PickyGitRepositoryStatusTests {
         let remoteWebURL = URL(string: "https://github.com/example/product")!
         let branchURL = PickyGitRepositoryStatus.makeBranchWebURL(
             remoteWebURL: remoteWebURL,
-            branchName: "docs/nicepay-linepay-implementation-plan"
+            branchName: "docs/sample-implementation-plan"
         )
 
-        #expect(branchURL?.absoluteString == "https://github.com/example/product/tree/docs/nicepay-linepay-implementation-plan")
+        #expect(branchURL?.absoluteString == "https://github.com/example/product/tree/docs/sample-implementation-plan")
     }
 
     @Test func loadCountsUntrackedTextFilesAsInsertionsAndSkipsBinaries() async throws {

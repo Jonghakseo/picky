@@ -185,8 +185,8 @@ describe("preview priority", () => {
   });
 
   it("reads markdown as text", () => {
-    expect(truncatePreview("**머지했어요.** [#5633](https://github.com/x/y/pull/5633)의 `main` 반영을 확인했어요"))
-      .toBe("머지했어요. #5633의 main 반영을 확인했어요");
+    expect(truncatePreview("**머지했어요.** [#1007](https://github.com/x/y/pull/1007)의 `main` 반영을 확인했어요"))
+      .toBe("머지했어요. #1007의 main 반영을 확인했어요");
     expect(truncatePreview("## 결과\n- 첫째\n> 인용")).toBe("결과 첫째 인용");
   });
 

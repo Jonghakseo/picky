@@ -621,7 +621,7 @@ enum Fixtures {
         title: "이 Slack 스레드를 어디로 넘길까요?",
         description: "결제 오류 제보 3건이 한 스레드에 모여 있어요.",
         question: QModel(prompt: nil, kind: .radio, options: [
-            QOption(label: "새 Pickle로 조사 시작", desc: "creatrip/product 기준", selected: true, focused: true),
+            QOption(label: "새 Pickle로 조사 시작", desc: "acme/product 기준", selected: true, focused: true),
             QOption(label: "진행 중인 ‘결제 장애’ Pickle에 보내기"),
             QOption(label: "요약만 해서 DM으로 보내기"),
         ], other: .idle),
@@ -689,7 +689,7 @@ struct PanelStage: View {
             id: "main-before-single", sessionId: "main", method: "askUserQuestion",
             title: "이 Slack 스레드를 어디로 넘길까요?", description: "결제 오류 제보 3건이 한 스레드에 모여 있어요.",
             questions: [.init(id: "route", type: .radio, prompt: "넘길 곳", label: nil,
-                              options: [.init(value: "new", label: "새 Pickle로 조사 시작", description: "creatrip/product 기준"),
+                              options: [.init(value: "new", label: "새 Pickle로 조사 시작", description: "acme/product 기준"),
                                         .init(value: "existing", label: "진행 중인 ‘결제 장애’ Pickle에 보내기"),
                                         .init(value: "dm", label: "요약만 해서 DM으로 보내기")],
                               allowOther: nil, required: true, placeholder: nil, defaultValue: .string("new"))],

@@ -230,7 +230,7 @@ struct ProtocolContractTests {
           "id":"artifact-preview",
           "kind":"link",
           "title":"Preview",
-          "url":"https://pull-request-web-4483.preview.creatrip.com`/`",
+          "url":"https://pr-1234.preview.example.com`/`",
           "updatedAt":"2026-05-01T00:00:00.000Z"
         }
         """.data(using: .utf8)!
@@ -265,7 +265,7 @@ struct ProtocolContractTests {
               "id":"artifact-preview",
               "kind":"link",
               "title":"Preview",
-              "url":"https://pull-request-web-4483.preview.creatrip.com`/`",
+              "url":"https://pr-1234.preview.example.com`/`",
               "updatedAt":"2026-05-01T00:00:00.000Z"
             }],
             "changedFiles":[]

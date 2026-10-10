@@ -2756,7 +2756,7 @@ struct PickySessionViewModelTests {
             kind: "slack",
             title: "Slack",
             path: nil,
-            url: URL(string: "https://example.slack.com/archives/C012ZMHLPDW/p1777763920621249")!,
+            url: URL(string: "https://example.slack.com/archives/C0000000000/p1700000000000000")!,
             updatedAt: Date()
         )
         let notion = PickyArtifact(
@@ -2764,7 +2764,7 @@ struct PickySessionViewModelTests {
             kind: "notion",
             title: "Notion",
             path: nil,
-            url: URL(string: "https://www.notion.so/example/355d62c6956180cf8695dcdf5c4ff226")!,
+            url: URL(string: "https://www.notion.so/example/11111111111111111111111111111111")!,
             updatedAt: Date()
         )
         let jira = PickyArtifact(id: "jira-1", kind: "jira", title: "COM-123", path: nil, url: URL(string: "https://example.atlassian.net/browse/COM-123")!, updatedAt: Date())
@@ -2800,9 +2800,9 @@ struct PickySessionViewModelTests {
         let github = PickyArtifact(id: "github-1", kind: "github", title: "#42", path: nil, url: URL(string: "https://github.com/acme/repo/pull/42")!, updatedAt: Date())
         let jira = PickyArtifact(id: "jira-1", kind: "jira", title: "COM-123", path: nil, url: URL(string: "https://example.atlassian.net/browse/COM-123")!, updatedAt: Date())
         let linear = PickyArtifact(id: "linear-1", kind: "linear", title: "ENG-456", path: nil, url: URL(string: "https://linear.app/acme/issue/ENG-456/fix-checkout")!, updatedAt: Date())
-        let slack = PickyArtifact(id: "slack-1", kind: "slack", title: "Slack", path: nil, url: URL(string: "https://example.slack.com/archives/C012ZMHLPDW/p1777763920621249")!, updatedAt: Date())
-        let notion1 = PickyArtifact(id: "notion-1", kind: "notion", title: "Notion", path: nil, url: URL(string: "https://www.notion.so/example/355d62c6956180cf8695dcdf5c4ff226")!, updatedAt: Date())
-        let notion2 = PickyArtifact(id: "notion-2", kind: "notion", title: "Notion", path: nil, url: URL(string: "https://app.notion.com/p/351d62c6956180498d13e3494b488192")!, updatedAt: Date())
+        let slack = PickyArtifact(id: "slack-1", kind: "slack", title: "Slack", path: nil, url: URL(string: "https://example.slack.com/archives/C0000000000/p1700000000000000")!, updatedAt: Date())
+        let notion1 = PickyArtifact(id: "notion-1", kind: "notion", title: "Notion", path: nil, url: URL(string: "https://www.notion.so/example/11111111111111111111111111111111")!, updatedAt: Date())
+        let notion2 = PickyArtifact(id: "notion-2", kind: "notion", title: "Notion", path: nil, url: URL(string: "https://app.notion.com/p/22222222222222222222222222222222")!, updatedAt: Date())
         let generic1 = PickyArtifact(id: "link-1", kind: "link", title: "example.com", path: nil, url: URL(string: "https://example.com/docs/one")!, updatedAt: Date())
         let generic2 = PickyArtifact(id: "link-2", kind: "link", title: "example.com", path: nil, url: URL(string: "https://example.com/docs/two")!, updatedAt: Date())
         let otherGeneric = PickyArtifact(id: "link-3", kind: "link", title: "example.org", path: nil, url: URL(string: "https://example.org/docs")!, updatedAt: Date())

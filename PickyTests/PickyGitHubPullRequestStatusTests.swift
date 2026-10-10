@@ -44,15 +44,15 @@ struct PickyGitHubPullRequestStatusTests {
 
     @Test func buildsSingleBranchScopedListQuery() {
         let arguments = PickyGitHubPullRequestStatus.listArguments(
-            repositoryURL: URL(string: "https://github.com/creatrip/product"),
-            branch: "enhance/pharmacy-berrynew-sheet-sync"
+            repositoryURL: URL(string: "https://github.com/acme/product"),
+            branch: "feature/partner-sheet-sync"
         )
 
         #expect(arguments == [
             "pr", "list",
-            "--repo", "creatrip/product",
+            "--repo", "acme/product",
             "--state", "all",
-            "--head", "enhance/pharmacy-berrynew-sheet-sync",
+            "--head", "feature/partner-sheet-sync",
             "--limit", "20",
             "--json", "number,title,url,state,isDraft,headRefName,headRepositoryOwner",
         ])
@@ -62,41 +62,41 @@ struct PickyGitHubPullRequestStatusTests {
         let json = """
         [
           {
-            "number": 4990,
-            "title": "Related pharmacy work",
-            "url": "https://github.com/creatrip/product/pull/4990",
+            "number": 1003,
+            "title": "Related sheet work",
+            "url": "https://github.com/acme/product/pull/1003",
             "state": "MERGED",
             "isDraft": false,
-            "headRefName": "enhance/pharmacy-reservation-sheet-sync",
-            "headRepositoryOwner": { "login": "creatrip" }
+            "headRefName": "feature/reservation-sheet-sync",
+            "headRepositoryOwner": { "login": "acme" }
           },
           {
-            "number": 5144,
-            "title": "Add Berrynew pharmacy sheets",
-            "url": "https://github.com/creatrip/product/pull/5144",
+            "number": 1004,
+            "title": "Add partner sheets",
+            "url": "https://github.com/acme/product/pull/1004",
             "state": "MERGED",
             "isDraft": false,
-            "headRefName": "enhance/pharmacy-berrynew-sheet-sync",
-            "headRepositoryOwner": { "login": "creatrip" }
+            "headRefName": "feature/partner-sheet-sync",
+            "headRepositoryOwner": { "login": "acme" }
           }
         ]
         """
         let candidates = try #require(PickyGitHubPullRequestStatus.parseCandidates(json: json))
         let repository = try #require(PickyGitHubPullRequestStatus.RepositoryIdentity(
-            url: URL(string: "https://github.com/creatrip/product")
+            url: URL(string: "https://github.com/acme/product")
         ))
 
         let selected = PickyGitHubPullRequestStatus.selectCandidate(
             candidates,
             repository: repository,
-            branch: "enhance/pharmacy-berrynew-sheet-sync",
+            branch: "feature/partner-sheet-sync",
             artifactURLs: [
-                URL(string: "https://github.com/creatrip/product/pull/4990")!,
-                URL(string: "https://github.com/creatrip/product/pull/5144")!,
+                URL(string: "https://github.com/acme/product/pull/1003")!,
+                URL(string: "https://github.com/acme/product/pull/1004")!,
             ]
         )
 
-        #expect(selected?.number == 5144)
+        #expect(selected?.number == 1004)
         #expect(selected?.state == .merged)
     }
 

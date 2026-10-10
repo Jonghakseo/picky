@@ -922,7 +922,14 @@ export class MainAgentCoordinator {
     const eventGeneration = ++this.mainHandleEventGeneration;
     this.mainHandleUnsubscribe = handle.subscribe((event) => {
       if (eventGeneration !== this.mainHandleEventGeneration) return;
-      void this.applyMainRuntimeEvent(event, eventGeneration);
+      // A rejection here (for example picky.json failing to write) would surface as an unhandled
+      // rejection, which the extension crash guard rethrows and turns into a daemon exit.
+      this.applyMainRuntimeEvent(event, eventGeneration).catch((error) => {
+        logAgentd("main runtime event failed", {
+          eventType: event.type,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
     });
   }
 

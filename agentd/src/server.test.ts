@@ -1758,7 +1758,9 @@ describe("AgentdServer", () => {
     ws.send(JSON.stringify({ id: "cmd-duplicate-pickle", protocolVersion: PROTOCOL_VERSION, type: "duplicatePickleSession", sessionId: "session-source" }));
     await waitUntil(() => duplicatePickleSession.mock.calls.length === 1);
 
-    const handoffReply = await waitForEvent(ws, "pickleSessionUpdated");
+    // The four commands settle independently, so pick the reply by command id instead of arrival order.
+    await waitUntil(() => eventBuffers.get(ws)?.some((event) => event.type === "pickleSessionUpdated" && (event as { commandId?: string }).commandId === "cmd-handoff-pickle") === true);
+    const handoffReply = eventBuffers.get(ws)?.find((event) => event.type === "pickleSessionUpdated" && (event as { commandId?: string }).commandId === "cmd-handoff-pickle");
     expect(handoffReply).toMatchObject({ commandId: "cmd-handoff-pickle", session: { title: "Handoff" } });
 
     expect(createEmptyPickleSession).toHaveBeenCalledWith(expect.objectContaining({ id: "context-manual pickle" }), true, true);

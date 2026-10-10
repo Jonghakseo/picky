@@ -353,6 +353,13 @@ export function shouldPurgeArchivedSession(
 }
 
 /** An absent runtime cannot turn old-owner resources or delivery obligations into empty work. */
+/** Startup restore must persist a session when recovery or Pickle defaults changed it from disk. */
+export function restoredSessionNeedsCommit(session: PickyAgentSession, persisted: PickyAgentSession, releasedOwner: boolean): boolean {
+  return isAsyncTracked(session) && !releasedOwner || session.piSessionFilePath !== persisted.piSessionFilePath
+    || session.notifyMainOnCompletion !== persisted.notifyMainOnCompletion
+    || session.notifyMacOSOnCompletion !== persisted.notifyMacOSOnCompletion;
+}
+
 export function hasQuiescentReleasedAsyncOwner(session: PickyAgentSession): boolean {
   const control = session.asyncControl;
   const approval = control?.releasePrepared;

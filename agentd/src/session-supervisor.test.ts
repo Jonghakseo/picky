@@ -4270,6 +4270,38 @@ describe("SessionSupervisor", () => {
     expect(restored?.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
   });
 
+  it("keeps loading when one persisted session fails to restore", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const store = new SessionStore(dir);
+    const running = (id: string): PickyAgentSession => ({
+      id,
+      title: id,
+      status: "running",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      logs: [],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      activitySummary: { read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 },
+    });
+    await store.save(running("bad-session"));
+    await store.save(running("good-session"));
+    const realSave = store.save.bind(store);
+    vi.spyOn(store, "save").mockImplementation(async (session) => {
+      if (session.id === "bad-session") throw new Error("disk full");
+      await realSave(session);
+    });
+
+    const supervisor = new SessionSupervisor(new MockRuntime(), store);
+    await expect(supervisor.load()).resolves.toBeUndefined();
+
+    expect(supervisor.get("bad-session")?.status).toBe("blocked");
+    expect(supervisor.get("good-session")?.status).toBe("blocked");
+    expect((await new SessionStore(dir).loadAll()).find((entry) => entry.id === "good-session")?.lastSummary).toMatch(/Runtime not attached/);
+  });
+
   it("reattaches non-terminal persisted sessions from Pi session files without leaving stale work active", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);
@@ -7414,7 +7446,9 @@ describe("SessionSupervisor", () => {
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "Turn one answer" });
     runtime.handle?.emit({ type: "status", status: "running", summary: "Next turn started", finalAnswer: "Turn one answer" });
-    await waitUntil(() => supervisor.get(session.id)?.messages?.some((message) => message.kind === "agent_text") === true);
+    // The message sync and the finalAnswer patch are separate durable writes; wait for both.
+    await waitUntil(() => supervisor.get(session.id)?.messages?.some((message) => message.kind === "agent_text") === true
+      && supervisor.get(session.id)?.finalAnswer !== undefined);
 
     expect(supervisor.get(session.id)?.messages).toMatchObject([{ kind: "agent_text", text: "Turn one answer" }]);
     expect(supervisor.get(session.id)?.finalAnswer).toBe("Turn one answer");

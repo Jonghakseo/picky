@@ -6,6 +6,7 @@ import { prefixedUserInputFromLogLine } from "./domain/log-prefixes.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { buildToolResultPreview } from "./domain/tool-result-preview.js";
 import { PickyAgentSessionSchema, PickyMainAgentStateSchema, type PickyAgentSession, type PickyMainAgentState, type PickyToolActivity } from "./protocol.js";
+import { KeyedSerialQueue } from "./domain/keyed-serial-queue.js";
 
 export const ORPHANED_CHILD_SESSION_RECOVERY_LOG = "orphaned child Pickle session recovered from scoped metadata";
 export const ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY = "Child Pickle daemon is not attached after Picky restart; send a follow-up or steer message to continue.";
@@ -71,8 +72,7 @@ export class SessionStore {
     const directory = dirname(targetPath);
     await mkdir(directory, { recursive: true });
     const tempPath = join(directory, `.${safeName(basename(targetPath))}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`);
-    await writeFile(tempPath, JSON.stringify(value, null, 2));
-    await rename(tempPath, targetPath);
+    await writeFileAtomically(tempPath, targetPath, JSON.stringify(value, null, 2));
   }
 
   async deleteSession(sessionId: string): Promise<void> {
@@ -97,8 +97,7 @@ export class SessionStore {
   async saveMainAgentState(state: PickyMainAgentState): Promise<void> {
     await mkdir(this.appSupportDir, { recursive: true });
     const tempPath = join(this.appSupportDir, `.picky.${process.pid}.${Date.now()}.${randomUUID()}.tmp`);
-    await writeFile(tempPath, JSON.stringify(state, null, 2));
-    await rename(tempPath, this.pickyStatePath);
+    await writeFileAtomically(tempPath, this.pickyStatePath, JSON.stringify(state, null, 2));
   }
 
   async loadMainAgentState(): Promise<PickyMainAgentState> {
@@ -107,6 +106,8 @@ export class SessionStore {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         console.warn(`Skipping unreadable Picky metadata ${this.pickyStatePath}: ${messageOf(error)}`);
+        // The next save would overwrite this file with an empty state, so move the original aside first.
+        await quarantineCorruptFile(this.pickyStatePath);
       }
       return { messages: [] };
     }
@@ -198,20 +199,32 @@ export class SessionStore {
 
   private async loadOne(filePath: string, options: { persistMigration?: boolean } = {}): Promise<PickyAgentSession | undefined> {
     const persistMigration = options.persistMigration ?? true;
+    let migrated: { value: unknown; changed: boolean };
+    let session: PickyAgentSession;
     try {
       const raw = JSON.parse(await readFile(filePath, "utf8"));
-      const migrated = migrateLegacySession(raw);
-      const session = PickyAgentSessionSchema.parse(migrated.value);
-      // Validate known fields, but write the minimally migrated raw value:
-      // Zod strips unknown fields, including nested metadata from newer clients.
-      // Migrate the file that was read, never the session's authoritative path: an old flat
-      // copy must not be promoted over the scoped file a child daemon owns.
-      if (migrated.changed && persistMigration) await this.persistValueAtPath(filePath, migrated.value);
-      return projectLegacyToolResultJSONPreviews(session);
+      migrated = migrateLegacySession(raw);
+      session = PickyAgentSessionSchema.parse(migrated.value);
     } catch (error) {
       console.warn(`Skipping unreadable Picky session metadata ${filePath}: ${messageOf(error)}`);
+      // Keep the bytes so a bad file does not just vanish from the dock. ENOENT means it was
+      // removed between readdir and read, so there is nothing to keep.
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") await quarantineCorruptFile(filePath);
       return undefined;
     }
+    // Validate known fields, but write the minimally migrated raw value:
+    // Zod strips unknown fields, including nested metadata from newer clients.
+    // Migrate the file that was read, never the session's authoritative path: an old flat
+    // copy must not be promoted over the scoped file a child daemon owns.
+    if (migrated.changed && persistMigration) {
+      try {
+        await this.persistValueAtPath(filePath, migrated.value);
+      } catch (error) {
+        // The in-memory session is valid; a failed rewrite only means we migrate again next start.
+        console.warn(`Could not persist migrated Picky session metadata ${filePath}: ${messageOf(error)}`);
+      }
+    }
+    return projectLegacyToolResultJSONPreviews(session);
   }
 
   private async loadNestedSession(directoryName: string): Promise<PickyAgentSession | undefined> {
@@ -226,6 +239,42 @@ export class SessionStore {
       lastSummary: ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY,
       logs: appendUniqueLog(session.logs, ORPHANED_CHILD_SESSION_RECOVERY_LOG),
     };
+  }
+}
+
+/**
+ * Writes `data` to `tempPath`, then renames over `targetPath`. A failed attempt removes its temp
+ * file so repeated failures do not litter the directory. No fsync yet: it slowed every save enough
+ * to destabilize async-task timing under load, so durability against power loss is a follow-up.
+ */
+async function writeFileAtomically(tempPath: string, targetPath: string, data: string): Promise<void> {
+  // Serialize per target so renames land in call order; otherwise an earlier, slower write could
+  // finish last and replace a newer state on disk.
+  await atomicWrites.run(targetPath, () => writeAndRename(tempPath, targetPath, data));
+}
+
+/** Process-wide so separate SessionStore instances over the same directory also stay ordered. */
+const atomicWrites = new KeyedSerialQueue();
+
+async function writeAndRename(tempPath: string, targetPath: string, data: string): Promise<void> {
+  try {
+    await writeFile(tempPath, data);
+    await rename(tempPath, targetPath);
+  } catch (error) {
+    await rm(tempPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+/** Moves an unreadable file to `<name>.corrupt-<timestamp>` (never matches `*.json`). Best effort. */
+async function quarantineCorruptFile(filePath: string): Promise<void> {
+  const quarantinePath = `${filePath}.corrupt-${Date.now()}`;
+  try {
+    await rename(filePath, quarantinePath);
+    console.warn(`Preserved unreadable Picky file as ${quarantinePath}`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    console.warn(`Could not preserve unreadable Picky file ${filePath}: ${messageOf(error)}`);
   }
 }
 

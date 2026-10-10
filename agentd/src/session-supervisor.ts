@@ -12,6 +12,7 @@ import { FollowUpLifecycleDiagnostics } from "./application/follow-up-lifecycle-
 import { disposeRuntimeHandle } from "./application/runtime-handle-disposal.js";
 import { RuntimeDisposalGate } from "./application/runtime-disposal-gate.js";
 import { RuntimeTeardownRecovery } from "./application/runtime-teardown-recovery.js";
+import { parkUnrestorableSession } from "./application/session-restore-failure.js";
 import type { ExternalPickleCompletionRequest } from "./application/pickle-completion-coordinator.js";
 import type { ReloadPluginsSummary, SessionSupervisorOptions } from "./application/session-supervisor-options.js";
 import { reloadPluginsWithoutInterruption } from "./application/plugin-reload.js";
@@ -54,7 +55,7 @@ import { isTerminalStatus } from "./domain/session-status.js";
 import { countSystemMessages, sameTodoState, shouldReattachBlockedSessionOnStartup } from "./domain/session-state-policy.js";
 import { isSemanticNoOpPatch } from "./domain/session-patch-policy.js";
 import { nextRevision } from "./domain/session-revision-policy.js";
-import { ARCHIVED_SESSION_RETENTION_DAYS, hasQuiescentReleasedAsyncOwner, recoverAsyncSession, shouldResumeIdleAsyncSession, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, shouldRestoreInterruptedRuntime, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
+import { ARCHIVED_SESSION_RETENTION_DAYS, hasQuiescentReleasedAsyncOwner, recoverAsyncSession, shouldResumeIdleAsyncSession, buildArchivedSessionRestartCancellation, buildDuplicatedPickleSession, buildEmptyPickleSession, buildInterruptedRuntimeLiveStatePatch, buildOrphanedChildRecoverySession, buildPinnedPickleSession, buildResumedHandoffPickleSession, buildRuntimeReattachPatch, buildRuntimeSessionReplacementPatch, buildUnattachedRuntimeBlock, buildVisibleSession, restoredSessionNeedsCommit, shouldRestoreInterruptedRuntime, shouldPurgeArchivedSession } from "./domain/session-supervisor-projection-policy.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
 import { settleActiveTools } from "./domain/tool-activity.js";
 import { titleFromContext, withExplicitSessionName } from "./domain/session-title.js";
@@ -253,67 +254,60 @@ export class SessionSupervisor extends EventEmitter {
     const persisted = await this.store.loadAll();
     logAgentd("sessions loading", { count: persisted.length });
     for (const persistedSession of persisted) {
-      const migratedSession = recoverAsyncSession(withPiSessionFileFromLogs(persistedSession)); const releasedOwner = hasQuiescentReleasedAsyncOwner(migratedSession);
-      const isPickleSession = hasPickleSessionMarkerLog(migratedSession);
-      if (isPickleSession) this.pickleSessionIds.add(migratedSession.id);
-      const session = isPickleSession
-        ? {
-            ...migratedSession,
-            notifyMainOnCompletion: migratedSession.notifyMainOnCompletion ?? false,
-            notifyMacOSOnCompletion: migratedSession.notifyMacOSOnCompletion ?? false,
-          }
-        : migratedSession;
-      if (isAsyncTracked(session) && !releasedOwner || session.piSessionFilePath !== persistedSession.piSessionFilePath
-          || session.notifyMainOnCompletion !== persistedSession.notifyMainOnCompletion
-          || session.notifyMacOSOnCompletion !== persistedSession.notifyMacOSOnCompletion) await this.commitSession(session);
-      else this.sessions.set(session.id, session);
-      this.messageBuilder.hydrateSession(session.id, session.messages);
-      if (this.pickleSessionIds.has(session.id)) void this.pickleSessionTitleRefresher.refresh(session.id);
+      try {
+        const migratedSession = recoverAsyncSession(withPiSessionFileFromLogs(persistedSession)); const releasedOwner = hasQuiescentReleasedAsyncOwner(migratedSession);
+        const isPickleSession = hasPickleSessionMarkerLog(migratedSession);
+        if (isPickleSession) this.pickleSessionIds.add(migratedSession.id);
+        const session = isPickleSession
+          ? {
+              ...migratedSession,
+              notifyMainOnCompletion: migratedSession.notifyMainOnCompletion ?? false,
+              notifyMacOSOnCompletion: migratedSession.notifyMacOSOnCompletion ?? false,
+            }
+          : migratedSession;
+        if (restoredSessionNeedsCommit(session, persistedSession, releasedOwner)) await this.commitSession(session);
+        else this.sessions.set(session.id, session);
+        this.messageBuilder.hydrateSession(session.id, session.messages);
+        if (this.pickleSessionIds.has(session.id)) void this.pickleSessionTitleRefresher.refresh(session.id);
 
-      if (session.logs.includes(ORPHANED_CHILD_SESSION_RECOVERY_LOG)) {
-        const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
-        const current = this.mustGet(session.id);
-        // Strip the ORPHANED marker from the persisted logs after we surface the recovery summary
-        // once. Without this the marker stays in logs forever and every subsequent restart re-enters
-        // this branch, leaving the dock icon permanently in the blocked/help state even when the Pi
-        // session file is still alive and reattachable.
-        const restored = buildOrphanedChildRecoverySession(
-          current,
-          interrupted.patch,
-          new Date().toISOString(),
-          ORPHANED_CHILD_SESSION_RECOVERY_LOG,
-          ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY,
-        );
-        await this.commitSession(session.id, () => restored);
-        continue;
-      }
-
-      if (shouldRestoreInterruptedRuntime(session, releasedOwner)) {
-        if (session.archived === true) {
+        if (session.logs.includes(ORPHANED_CHILD_SESSION_RECOVERY_LOG)) {
           const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
           const current = this.mustGet(session.id);
-          const restored = buildArchivedSessionRestartCancellation(current, interrupted.patch, new Date().toISOString());
+          // Strip the ORPHANED marker from the persisted logs after we surface the recovery summary
+          // once. Without this the marker stays in logs forever and every subsequent restart re-enters
+          // this branch, leaving the dock icon permanently in the blocked/help state even when the Pi
+          // session file is still alive and reattachable.
+          const restored = buildOrphanedChildRecoverySession(current, interrupted.patch, new Date().toISOString(),
+            ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY);
           await this.commitSession(session.id, () => restored);
           continue;
         }
 
-        const resumedHandle = await this.tryResumeRuntimeHandle(session);
-        void this.asyncControls.reopenIdleAdmission(session.id, "restart"); // No-op without an attached owner.
-        if (!resumedHandle) {
-          const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
-          const current = this.mustGet(session.id);
-          const restored = buildUnattachedRuntimeBlock(
-            current,
-            interrupted.patch,
-            new Date().toISOString(),
-            "Runtime not attached after daemon restart; start a new task or resume support is required",
-          );
-          await this.commitSession(session.id, () => restored);
+        if (shouldRestoreInterruptedRuntime(session, releasedOwner)) {
+          if (session.archived === true) {
+            const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
+            const current = this.mustGet(session.id);
+            const restored = buildArchivedSessionRestartCancellation(current, interrupted.patch, new Date().toISOString());
+            await this.commitSession(session.id, () => restored);
+            continue;
+          }
+
+          const resumedHandle = await this.tryResumeRuntimeHandle(session);
+          void this.asyncControls.reopenIdleAdmission(session.id, "restart"); // No-op without an attached owner.
+          if (!resumedHandle) {
+            const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
+            const current = this.mustGet(session.id);
+            const restored = buildUnattachedRuntimeBlock(current, interrupted.patch, new Date().toISOString(),
+              "Runtime not attached after daemon restart; start a new task or resume support is required");
+            await this.commitSession(session.id, () => restored);
+          }
+        } else if (shouldReattachBlockedSessionOnStartup(session, Boolean(piSessionFilePathForSession(session)))
+          || shouldResumeIdleAsyncSession(session, releasedOwner, Boolean(piSessionFilePathForSession(session)))) {
+          await this.tryResumeRuntimeHandle(session);
+          void this.asyncControls.reopenIdleAdmission(session.id, "restart");
         }
-      } else if (shouldReattachBlockedSessionOnStartup(session, Boolean(piSessionFilePathForSession(session)))
-        || shouldResumeIdleAsyncSession(session, releasedOwner, Boolean(piSessionFilePathForSession(session)))) {
-        await this.tryResumeRuntimeHandle(session);
-        void this.asyncControls.reopenIdleAdmission(session.id, "restart");
+      } catch (error) {
+        await parkUnrestorableSession(persistedSession, error, { current: (id) => this.sessions.get(id), commit: (blocked) => this.commitSession(blocked.id, () => blocked), keepInMemory: (blocked) => this.sessions.set(blocked.id, blocked) });
       }
     }
     // Run after Pickle sessions are hydrated so the carried summary can reference them.
@@ -1801,7 +1795,10 @@ export class SessionSupervisor extends EventEmitter {
   private async attachRuntimeHandle(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
     await this.runtimeDisposalGate.waitOrDispose(sessionId, handle);
     this.runtimeHandles.set(sessionId, handle);
-    this.runtimeHandleUnsubscribes.set(sessionId, handle.subscribe((event) => void this.applyRuntimeEvent(sessionId, event)));
+    this.runtimeHandleUnsubscribes.set(sessionId, handle.subscribe((event) => {
+      // Same guard as the main agent: a failed save here must not become a daemon-killing unhandled rejection.
+      this.applyRuntimeEvent(sessionId, event).catch((error) => logAgentd("runtime event failed", { sessionId, eventType: event.type, error: error instanceof Error ? error.message : String(error) }));
+    }));
     // Teach the runtime adapter what the host currently surfaces, so it can
     // skip a runtime-only "pending extension UI" signal that the supervisor
     // never accepted (e.g. Pi resume revived a stale request before the

@@ -434,3 +434,78 @@ describe("SessionStore metadata-only rewrites", () => {
     expect(existsSync(join(root, "sessions", "child.json"))).toBe(false);
   });
 });
+
+describe("SessionStore corrupt data preservation", () => {
+  const corruptSiblings = (dir: string, prefix: string) => readdirSync(dir).filter((name) => name.startsWith(`${prefix}.corrupt-`));
+
+  it("moves a corrupt picky.json aside and starts from an empty state", async () => {
+    const root = tmpRoot();
+    writeFileSync(join(root, "picky.json"), "{ not json");
+    const store = new SessionStore(root);
+
+    expect(await store.loadMainAgentState()).toEqual({ messages: [] });
+
+    expect(existsSync(join(root, "picky.json"))).toBe(false);
+    const [preserved] = corruptSiblings(root, "picky.json");
+    expect(preserved).toBeDefined();
+    expect(readFileSync(join(root, preserved!), "utf8")).toBe("{ not json");
+
+    // A later save must not clobber the preserved copy.
+    await store.saveMainAgentState({ messages: [] });
+    expect(readFileSync(join(root, preserved!), "utf8")).toBe("{ not json");
+  });
+
+  it("moves a picky.json that fails schema validation aside", async () => {
+    const root = tmpRoot();
+    writeFileSync(join(root, "picky.json"), JSON.stringify({ messages: "nope" }));
+
+    expect(await new SessionStore(root).loadMainAgentState()).toEqual({ messages: [] });
+
+    expect(corruptSiblings(root, "picky.json")).toHaveLength(1);
+  });
+
+  it("keeps a missing picky.json quiet", async () => {
+    const root = tmpRoot();
+    expect(await new SessionStore(root).loadMainAgentState()).toEqual({ messages: [] });
+    expect(readdirSync(root)).toEqual([]);
+  });
+
+  it("loads the healthy session and preserves the corrupt session file", async () => {
+    const root = tmpRoot();
+    const store = new SessionStore(root);
+    await store.save(makeSession({ id: "healthy" }));
+    const sessionsDir = join(root, "sessions");
+    writeFileSync(join(sessionsDir, "broken.json"), JSON.stringify({ id: "broken", status: 42 }));
+
+    const loaded = await store.loadAll();
+
+    expect(loaded.map((session) => session.id)).toEqual(["healthy"]);
+    expect(existsSync(join(sessionsDir, "broken.json"))).toBe(false);
+    const [preserved] = corruptSiblings(sessionsDir, "broken.json");
+    expect(JSON.parse(readFileSync(join(sessionsDir, preserved!), "utf8"))).toEqual({ id: "broken", status: 42 });
+    // The preserved copy is not picked up as a session on the next start.
+    expect((await store.loadAll()).map((session) => session.id)).toEqual(["healthy"]);
+  });
+
+  it("preserves a corrupt scoped child session file next to its original location", async () => {
+    const root = tmpRoot();
+    const nestedDir = join(root, "sessions", "child-1");
+    mkdirSync(nestedDir, { recursive: true });
+    writeFileSync(join(nestedDir, "child-1.json"), "garbage");
+
+    expect(await new SessionStore(root).loadAll()).toEqual([]);
+
+    expect(corruptSiblings(nestedDir, "child-1.json")).toHaveLength(1);
+  });
+
+  it("leaves no temp file behind when a write fails", async () => {
+    const root = tmpRoot();
+    const store = new SessionStore(root);
+    // A directory sitting at the target path makes the final rename fail.
+    mkdirSync(join(root, "sessions", "blocked.json"), { recursive: true });
+
+    await expect(store.save(makeSession({ id: "blocked" }))).rejects.toThrow();
+
+    expect(readdirSync(join(root, "sessions")).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+});

@@ -103,13 +103,13 @@ jobs:
 
     steps:
       - name: Check out release ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.release.tag_name || inputs.tag_name }}
           fetch-depth: 0
 
       - name: Check out current release policy
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: .release-policy
@@ -255,7 +255,7 @@ jobs:
           echo "xcode_version=${xcode_version}" >> "${GITHUB_OUTPUT}"
 
       - name: Cache SwiftPM checkouts and artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build/package/spm-cache
           key: spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.xcode_version }}-${{ hashFiles('Picky.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
@@ -263,12 +263,12 @@ jobs:
             spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.xcode_version }}-
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -611,7 +611,7 @@ jobs:
 
       - name: Upload workflow artifact copy
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: picky-notarized-release-${{ github.run_id }}
           if-no-files-found: ignore
@@ -637,13 +637,13 @@ jobs:
       # policy helpers, so rerunning a historical tag still gets the current
       # safety options. Nothing in this job needs the tagged source.
       - name: Check out current release policy
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 1
 
       - name: Download notarized release payload
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: picky-notarized-release-${{ github.run_id }}
           path: build/package

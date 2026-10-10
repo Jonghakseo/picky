@@ -294,7 +294,7 @@ Pickle status can be:
 | failed | Failed. |
 | cancelled | Stopped/cancelled. |
 
-The dock row's glyph color, trailing dot, and completion flash reflect these states. A running Pickle shows a ring around its glyph; Pickles that need you (waiting for input, blocked, failed) show a colored dot at the end of the row, and an unread Pickle shows a blue dot instead.
+The dock row's glyph color, trailing dot, and completion flash reflect these states. A running Pickle shows a ring around its glyph; Pickles that need you (waiting for input, blocked, failed) show a colored dot at the end of the row, and an unread Pickle shows a blue dot instead. A blocked Pickle uses a diamond dot and a pause-eyed glyph, so it stays distinct from a failed one without relying on color.
 
 ### 7.2 Dock interactions
 

@@ -176,7 +176,7 @@ Starting a new voice input interrupts an in-progress spoken response. This lets 
 
 Push-to-Talk goes to the main Picky agent unless a Pickle is armed as the input target (see 4.3). Hovering over a Pickle card does not change the target.
 
-To speak to one Pickle, use the microphone button next to Send in that Pickle's composer:
+To speak to one Pickle, use the microphone button on the left of that Pickle's composer toolbar:
 
 1. Click the microphone, or press `Cmd + D` while the Pickle's composer has keyboard focus. The line above the composer shows **Listening** and the elapsed time.
 2. Click it again or press `Cmd + D` again to stop. Picky transcribes the recording and adds the text to the end of the composer, after anything you already typed. Nothing is sent yet.
@@ -409,7 +409,7 @@ The card contains:
 - Conversation history as a messenger thread with Markdown-rendered replies and day dividers (**Today**, **Yesterday**, then dates). Hover a bubble to see its send time. Thinking is not shown in the thread; while a Pickle is replying, a line under the last bubble shows **Working · <step>** while a tool runs (the current checklist step, shell command title, skill, or delegated agent), **Preparing next step** while the agent writes out its next tool call, a short writing phrase such as **Choosing words** while reply text streams, and **Thinking** otherwise, with the elapsed time on hover. The last step stays on the line through pauses shorter than 5 seconds. The line disappears once the reply finishes, even if background work keeps running.
 - Picky replies always render in full in the HUD, including Markdown tables rendered as cell grids, and can still be opened as reports. Only user message bubbles keep the **Show more** and collapse controls. The card keeps a window of the most recent turns; when older turns are hidden, a **Show earlier turns** pill at the top of the history reveals more per click (full history stays in the Pi session file).
 - A running-work footer when the runtime reports active background tasks. Expand it to see task names and elapsed times; subagent work shows agent types when available. The footer can open as a popover in a compact card. Background jobs may keep running after the current response ends. Completed subagent launches and `bash_async` notifications are not duplicated in the conversation.
-- Composer for steer/follow-up input.
+- Composer for steer/follow-up input. Attach, terminal panel (`Cmd + E`), and microphone (`Cmd + D`) sit on the left of its toolbar; the model and thinking settings chip sits next to Send.
 - Inline question forms when Pi/tools need user input.
 - A read-only task-progress indicator at the top of the conversation when Pi shares a checklist for the active task. Click it to expand or collapse the task list; once expanded, it stays open while you interact elsewhere in the conversation and closes only when you collapse it or the checklist completes. Completed tasks are marked, the current task shows its in-progress state only while the Pickle is running, and lists with six or more tasks scroll within the expanded panel. As progress advances, the drawer scrolls the current task into view.
 - Optional local-shell utility panel below the composer. It opens directly to a terminal in the Pickle cwd and does not replace or sync the Pi session.

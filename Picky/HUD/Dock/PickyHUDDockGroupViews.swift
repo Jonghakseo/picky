@@ -134,13 +134,55 @@ enum PickyDockPickleStatusVisual {
     }
 
     /// Template asset for the states that swap the plain pickle glyph for an
-    /// expressive one (waiting / needs-attention). `nil` uses the logo glyph.
+    /// expressive one: sleepy eyes (waiting), pause-bar eyes (blocked), cross
+    /// eyes (failed). Blocked and failed must differ by shape, not only color.
+    /// `nil` uses the logo glyph.
     static func statusAssetName(_ status: PickySessionStatus) -> String? {
         switch status {
         case .waiting_for_input: return "PickleDockWait"
-        case .blocked, .failed: return "PickleDockHelp"
+        case .blocked: return "PickleDockBlocked"
+        case .failed: return "PickleDockHelp"
         default: return nil
         }
+    }
+
+    /// Trailing attention dot shape. Blocked is a diamond so it reads apart
+    /// from the round failed and waiting dots without relying on color.
+    static func attentionDotIsDiamond(_ status: PickySessionStatus) -> Bool {
+        status == .blocked
+    }
+}
+
+/// Diamond (rotated square) that spans the full rect, so it keeps the same
+/// bounding box as the circular attention dot beside it.
+struct PickyDockDiamondShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// Trailing "needs you" dot, status-colored. Round for waiting and failed,
+/// diamond for blocked.
+struct PickyDockAttentionDot: View {
+    let status: PickySessionStatus
+    let side: CGFloat
+
+    var body: some View {
+        let color = PickyDockPickleStatusVisual.color(status)
+        Group {
+            if PickyDockPickleStatusVisual.attentionDotIsDiamond(status) {
+                PickyDockDiamondShape().fill(color)
+            } else {
+                Circle().fill(color)
+            }
+        }
+        .frame(width: side, height: side)
     }
 }
 

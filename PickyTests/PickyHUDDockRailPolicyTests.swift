@@ -36,6 +36,23 @@ struct PickyHUDDockRailPolicyTests {
         ) == 0)
     }
 
+    /// Blocked is waiting on something outside the Pickle, not a failure, so
+    /// the dock must tell the two apart by glyph, dot shape, color, and spoken
+    /// status rather than by color alone (reduced rail, color-blind users).
+    @Test func blockedAndFailedPicklesAreDistinguishableWithoutColor() {
+        typealias Visual = PickyDockPickleStatusVisual
+        #expect(Visual.statusAssetName(.blocked) != nil)
+        #expect(Visual.statusAssetName(.failed) != nil)
+        #expect(Visual.statusAssetName(.blocked) != Visual.statusAssetName(.failed))
+        #expect(Visual.statusAssetName(.blocked) != Visual.statusAssetName(.waiting_for_input))
+        #expect(Visual.attentionDotIsDiamond(.blocked))
+        #expect(!Visual.attentionDotIsDiamond(.failed))
+        #expect(Visual.color(.blocked) != Visual.color(.failed))
+        #expect(PickyHUDDockRowStatusPresentation.label(.blocked) != PickyHUDDockRowStatusPresentation.label(.failed))
+        #expect(PickyHUDDockRowStatusPresentation.needsResponse(.blocked))
+        #expect(PickyHUDDockRowStatusPresentation.needsResponse(.failed))
+    }
+
     @Test func groupDeletionOnlyConfirmsForActiveMembers() {
         let archivedOnly = PickyDockGroup(id: "archived-only", memberSessionIDs: ["archived"])
         let mixed = PickyDockGroup(id: "mixed", memberSessionIDs: ["archived", "active"])

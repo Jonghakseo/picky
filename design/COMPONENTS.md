@@ -111,8 +111,17 @@ Dock group folder/list의 시각 변경은 앱을 실행하지 않는 render gal
 ### Session tile
 
 - title보다 상태와 식별 가능성이 우선한다.
-- selected, running, waiting, completed, failed, archived-progress 상태를 구분한다.
+- selected, running, waiting, blocked, completed, failed, archived-progress 상태를 구분한다.
 - 지속적인 glow보다 dot, ring, icon, label을 우선한다.
+- blocked(사용자 개입·외부 대기로 막힘)는 failed(실패)와 톤·형태가 모두 달라야 한다. 색만으로 구분하지 않는다.
+
+| 상태 | 색 token | Dock glyph | 주의 dot | 상태 label(VoiceOver 값) |
+|---|---|---|---|---|
+| waiting_for_input | `DS.Colors.warning` | `PickleDockWait` (감은 눈) | 원형 | `hud.event.awaitingInput` |
+| blocked | `DS.Colors.warningText` | `PickleDockBlocked` (일시정지 막대 눈) | 마름모 | `hud.state.blocked` |
+| failed | `DS.Colors.destructiveText` | `PickleDockHelp` (X 눈) | 원형 | `hud.conversation.status.failed` |
+
+상태 톤 모델 `PickyHUDStatusTone`은 `.blocked`와 `.error`를 분리한다. `.error`는 failed 전용이다.
 
 ### Conversation Card
 

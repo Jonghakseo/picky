@@ -294,7 +294,7 @@ struct PickyHUDDockChromeTests {
         #expect(files.count == PickyHUDDockSizePreset.allCases.count * 2 * 2 * FixtureState.allCases.count + 4 + 2)
     }
 
-    private static let statusGlyphAssetNames = ["PickleDockWait", "PickleDockHelp", "PickyCursorNormal"]
+    private static let statusGlyphAssetNames = ["PickleDockWait", "PickleDockBlocked", "PickleDockHelp", "PickyCursorNormal"]
 
     /// Status glyphs are asset-catalog images, which the rasterizer has to
     /// treat differently from the shapes and SF Symbols around them. Without

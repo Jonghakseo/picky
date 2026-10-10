@@ -2,7 +2,11 @@ import Foundation
 
 enum PickyHUDStatusTone: Equatable {
     case inProgress
+    /// The work failed. Reserved for `failed`; red.
     case error
+    /// The work is held up by something outside its control (user action,
+    /// external dependency). Not a failure, so it never shares the error tone.
+    case blocked
     case completed
     case other
 }
@@ -12,7 +16,9 @@ extension PickySessionStatus {
         switch self {
         case .running:
             return .inProgress
-        case .blocked, .failed:
+        case .blocked:
+            return .blocked
+        case .failed:
             return .error
         case .completed:
             return .completed

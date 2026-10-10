@@ -1650,8 +1650,9 @@ struct PickySessionViewModelTests {
 
     @Test func hudStatusToneMatchesPickleColorRules() throws {
         #expect(PickySessionStatus.running.hudTone == .inProgress)
-        #expect(PickySessionStatus.blocked.hudTone == .error)
+        #expect(PickySessionStatus.blocked.hudTone == .blocked)
         #expect(PickySessionStatus.failed.hudTone == .error)
+        #expect(PickySessionStatus.blocked.hudTone != PickySessionStatus.failed.hudTone)
         #expect(PickySessionStatus.completed.hudTone == .completed)
         #expect(PickySessionStatus.queued.hudTone == .other)
         #expect(PickySessionStatus.waiting_for_input.hudTone == .other)

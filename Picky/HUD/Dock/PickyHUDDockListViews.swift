@@ -512,9 +512,7 @@ struct PickyHUDDockSessionRow: View {
                 .fill(DS.Colors.notification)
                 .frame(width: metrics.rowUnreadDotSide, height: metrics.rowUnreadDotSide)
         } else if PickyHUDDockRowStatusPresentation.needsResponse(session.status) {
-            Circle()
-                .fill(PickyDockPickleStatusVisual.color(session.status))
-                .frame(width: metrics.rowAttentionDotSide, height: metrics.rowAttentionDotSide)
+            PickyDockAttentionDot(status: session.status, side: metrics.rowAttentionDotSide)
         }
     }
 
@@ -555,9 +553,7 @@ struct PickyHUDDockSessionRow: View {
                     .fill(DS.Colors.notification)
                     .frame(width: metrics.rowUnreadDotSide, height: metrics.rowUnreadDotSide)
             } else if PickyHUDDockRowStatusPresentation.needsResponse(session.status) {
-                Circle()
-                    .fill(PickyDockPickleStatusVisual.color(session.status))
-                    .frame(width: metrics.rowAttentionDotSide, height: metrics.rowAttentionDotSide)
+                PickyDockAttentionDot(status: session.status, side: metrics.rowAttentionDotSide)
             }
         }
     }

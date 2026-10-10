@@ -42,6 +42,7 @@ neutral.dark.1 → surface.panel → conversation.card.background
 | `color.status.running` | 실행·정보 상태 | `DS.Colors.info` |
 | `color.status.success` | 완료 상태 | `DS.Colors.success` |
 | `color.status.warning` | 입력 대기·주의 | `DS.Colors.warningText` |
+| `color.status.blocked` | 사용자 개입·외부 대기로 막힘(실패 아님) | `DS.Colors.warningText` |
 | `color.status.danger` | 실패·파괴적 행동 | `DS.Colors.destructiveText` |
 
 Keyboard focus에 전용 시각 token을 강제하지 않는다. 별도 표시가 필요한 컴포넌트는 `color.surface.hover` 계열의 subtle state layer를 우선 재사용하며, border/ring은 배경 전환만으로 상태가 충분히 전달되지 않는 경우에만 사용한다. focus 처리로 component의 frame, padding, radius가 달라져서는 안 된다.

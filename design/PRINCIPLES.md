@@ -47,7 +47,8 @@ Picky Action Blue는 클릭과 선택처럼 사용자의 행동 가능성을 알
 
 - Running / informational: blue 계열
 - Success / completed: green 계열
-- Waiting / warning / blocked: amber 계열
+- Waiting / warning: amber 계열
+- Blocked(사용자 개입·외부 대기): amber 계열이되 failed와 같은 error 톤을 공유하지 않고, 전용 glyph와 dot 형태로 구분한다
 - Failure / destructive: red 계열
 - Queued / cancelled / unavailable: neutral 계열
 

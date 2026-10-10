@@ -10,12 +10,12 @@ import Testing
 @Suite("PickySettings voice provider extensions")
 struct PickySettingsVoiceProvidersTests {
     @Test func voiceProviderEnumIncludesAllSelectableCases() {
-        #expect(PickyVoiceProviderSelection.allCases == [.local, .openai, .azure, .elevenLabs, .edge])
+        #expect(PickyVoiceProviderSelection.allCases == [.local, .openai, .azure, .elevenLabs, .edge, .groq])
     }
 
     @Test func transcriptionCapabilityListsAllProviders() {
         let cases = PickyVoiceProviderSelection.cases(for: .transcription)
-        #expect(cases == [.local, .openai, .azure, .elevenLabs])
+        #expect(cases == [.local, .groq, .openai, .azure, .elevenLabs])
     }
 
     @Test func speechPlaybackCapabilityListsAllProviders() {

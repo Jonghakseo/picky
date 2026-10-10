@@ -48,6 +48,9 @@ struct CompanionPanelSettingsView: View {
     @State private var elevenLabsSTTAPIKeyDraft: String = ""
     @State private var elevenLabsSTTModelDraft: String = ""
     @State private var elevenLabsSTTLanguageDraft: String = ""
+    @State private var groqSTTAPIKeyDraft: String = ""
+    @State private var sttVocabularyDraft: String = ""
+    @State private var sttConnectionCheck: PickySTTConnectionCheck?
     @StateObject private var oauthLoginController: PickyPiOAuthLoginController
     @StateObject private var edgeTTSVoiceCatalog = EdgeTTSVoiceCatalog()
     @State private var saveStatuses = CompanionPanelSettingsSaveStatuses()
@@ -1052,7 +1055,36 @@ struct CompanionPanelSettingsView: View {
                 VStack(alignment: .leading, spacing: DS.Spacing.space4) {
                     voiceSubgroupHeader("settings.voice.subgroup.stt")
 
-                    providerPicker(title: "settings.voice.provider.stt", capability: .transcription, selection: $viewModel.settings.sttProvider)
+                    VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+                        providerPicker(title: "settings.voice.provider.stt", capability: .transcription, selection: $viewModel.settings.sttProvider)
+                        if let noteKey = PickySTTProviderNote.key(for: viewModel.settings.sttProvider) {
+                            Text(LocalizedStringKey(noteKey))
+                                .font(PickyHUDTypography.supporting)
+                                .foregroundColor(supportingTextColor)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .pickyHubSelectableText()
+                        }
+                    }
+
+                    if viewModel.settings.sttProvider == .local {
+                        PickySTTSwitchToGroqView {
+                            viewModel.settings.sttProvider = .groq
+                        }
+                    }
+
+                    if viewModel.settings.sttProvider == .groq {
+                        sttKeySection(
+                            provider: .groq,
+                            label: "settings.voice.stt.apiKey",
+                            placeholder: "gsk_…",
+                            text: $groqSTTAPIKeyDraft
+                        )
+                        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+                            fieldLabel("settings.voice.stt.model")
+                            PickyGroqModelChoiceView(modelName: groqModelBinding)
+                        }
+                        groqLanguagePicker
+                    }
 
                     if viewModel.settings.sttProvider == .azure {
                         azureTextField(
@@ -1073,7 +1105,8 @@ struct CompanionPanelSettingsView: View {
                     }
 
                     if viewModel.settings.sttProvider == .openai {
-                        voiceSecureField(
+                        sttKeySection(
+                            provider: .openai,
                             label: "settings.voice.openai.stt.apiKey",
                             placeholder: "sk-…",
                             text: $openAISTTAPIKeyDraft
@@ -1119,6 +1152,10 @@ struct CompanionPanelSettingsView: View {
                             placeholder: L10n.t("settings.voice.placeholder.languageAutoElevenLabs"),
                             text: $elevenLabsSTTLanguageDraft
                         )
+                    }
+
+                    if [.groq, .openai, .azure].contains(viewModel.settings.sttProvider) {
+                        sttVocabularySection
                     }
                 }
 
@@ -1360,6 +1397,150 @@ struct CompanionPanelSettingsView: View {
                 }
                 .onSubmit { commitVoiceField() }
         }
+    }
+
+    // MARK: Speech recognition helpers
+
+    private func sttKeySection(
+        provider: PickySTTKeyProvider,
+        label: LocalizedStringKey,
+        placeholder: String,
+        text: Binding<String>
+    ) -> some View {
+        let check = sttConnectionCheck.flatMap { $0.applies(to: provider, apiKey: text.wrappedValue) ? $0 : nil }
+        let hasKey = !text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            fieldLabel(label)
+            HStack(spacing: DS.Spacing.space2) {
+                voiceSecureInput(placeholder: placeholder, text: text, isInvalid: check?.phase == .finished(.invalidKey))
+                    .frame(maxWidth: 420)
+                PickyHubButton(
+                    title: check?.phase == .checking ? "settings.voice.stt.checking" : "settings.voice.stt.check",
+                    role: .secondary,
+                    isBusy: check?.phase == .checking,
+                    isEnabled: hasKey
+                ) {
+                    runSTTConnectionCheck(provider: provider)
+                }
+                Spacer(minLength: 0)
+            }
+            if case .finished(let result)? = check?.phase {
+                PickySTTConnectionStatusView(provider: provider, result: result)
+            }
+            if PickySTTConnectionCheck.showsKeyGuide(apiKey: text.wrappedValue, check: check) {
+                PickySTTKeyGuideView(provider: provider)
+            } else {
+                PickySTTConsoleLinkView(provider: provider)
+            }
+        }
+    }
+
+    private var groqModelBinding: Binding<String> {
+        Binding(
+            get: { GroqTranscriptionDefaults.modelName(from: viewModel.settings) },
+            set: { newValue in
+                viewModel.settings.groqSTTModel = newValue
+                commitVoiceField()
+            }
+        )
+    }
+
+    private var groqLanguagePicker: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            fieldLabel("settings.voice.stt.language")
+            PickyNativeMenuPicker(
+                title: L10n.t("settings.voice.stt.language"),
+                selection: $viewModel.settings.groqSTTLanguage,
+                options: [
+                    .init(value: "", title: L10n.t("settings.voice.stt.language.auto")),
+                    .init(value: "ko", title: "한국어"),
+                    .init(value: "en", title: "English"),
+                    .init(value: "ja", title: "日本語"),
+                    .init(value: "zh", title: "中文"),
+                ]
+            )
+            .frame(maxWidth: embeddedMenuMaximumWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onChange(of: viewModel.settings.groqSTTLanguage) { _, _ in commitVoiceField() }
+        }
+    }
+
+    private var sttVocabularySection: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.space2) {
+            fieldLabel("settings.voice.stt.vocabulary")
+            TextField(L10n.t("settings.voice.stt.vocabulary.placeholder"), text: $sttVocabularyDraft, axis: .vertical)
+                .lineLimit(2...4)
+                .textFieldStyle(.plain)
+                .font(PickyHUDTypography.supportingMedium)
+                .foregroundColor(DS.Colors.textSecondary)
+                .padding(.horizontal, 9)
+                .padding(.vertical, DS.Spacing.space2)
+                .background(
+                    RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
+                        .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
+                )
+                .onChange(of: sttVocabularyDraft) { _, _ in voiceDraftDidChange() }
+                .onSubmit { commitVoiceField() }
+            Text("settings.voice.stt.vocabulary.note")
+                .font(PickyHUDTypography.supporting)
+                .foregroundColor(supportingTextColor)
+                .fixedSize(horizontal: false, vertical: true)
+                .pickyHubSelectableText()
+            toggleRow(
+                "settings.voice.stt.vocabulary.context",
+                isOn: $viewModel.settings.sttIncludesContextTerms,
+                divider: false
+            )
+            .onChange(of: viewModel.settings.sttIncludesContextTerms) { _, _ in commitVoiceField() }
+        }
+    }
+
+    /// Saves pending voice drafts, then verifies the typed key against the
+    /// provider. The result is shown only while the same key stays in the field.
+    private func runSTTConnectionCheck(provider: PickySTTKeyProvider) {
+        commitVoiceField()
+        let configuration: OpenAIAudioConfiguration
+        let modelName: String
+        let apiKey: String
+        switch provider {
+        case .groq:
+            apiKey = groqSTTAPIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            configuration = OpenAIAudioConfiguration(apiKey: apiKey, baseURL: GroqTranscriptionDefaults.baseURL)
+            modelName = GroqTranscriptionDefaults.modelName(from: viewModel.settings)
+        case .openai:
+            apiKey = openAISTTAPIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            configuration = OpenAIAudioConfiguration(
+                apiKey: apiKey,
+                baseURL: OpenAIAudioConfiguration.parseBaseURLOverride(openAISTTBaseURLDraft) ?? OpenAIAudioConfiguration.defaultBaseURL
+            )
+            let draftModel = openAISTTModelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            modelName = draftModel.isEmpty ? OpenAITranscriptionProvider.defaultModelName : draftModel
+        }
+        let pending = PickySTTConnectionCheck(provider: provider, apiKey: apiKey, phase: .checking)
+        sttConnectionCheck = pending
+        Task { @MainActor in
+            let result = await OpenAITranscriptionProvider.checkConnection(configuration: configuration, modelName: modelName)
+            guard sttConnectionCheck == pending else { return }
+            sttConnectionCheck?.phase = .finished(result)
+        }
+    }
+
+    private func voiceSecureInput(placeholder: String, text: Binding<String>, isInvalid: Bool) -> some View {
+        SecureField(placeholder, text: text)
+            .textFieldStyle(.plain)
+            .font(PickyHUDTypography.supportingMonospacedMedium)
+            .foregroundColor(DS.Colors.textSecondary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, DS.Spacing.space2)
+            .background(
+                RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
+                    .stroke(
+                        isInvalid ? DS.Colors.destructiveText : DS.Colors.borderSubtle.opacity(0.6),
+                        lineWidth: isInvalid ? 1 : 0.5
+                    )
+            )
+            .onChange(of: text.wrappedValue) { _, _ in voiceDraftDidChange() }
+            .onSubmit { commitVoiceField() }
     }
 
     /// Sub-section label inside the Voice section. Visually subdues the STT vs TTS
@@ -1775,6 +1956,8 @@ struct CompanionPanelSettingsView: View {
         viewModel.settings.elevenLabsSTTAPIKey = elevenLabsSTTAPIKeyDraft
         viewModel.settings.elevenLabsSTTModel = elevenLabsSTTModelDraft
         viewModel.settings.elevenLabsSTTLanguage = elevenLabsSTTLanguageDraft
+        viewModel.settings.groqSTTAPIKey = groqSTTAPIKeyDraft
+        viewModel.settings.sttVocabulary = sttVocabularyDraft
         saveImmediately(for: .voice)
     }
 
@@ -1908,6 +2091,8 @@ struct CompanionPanelSettingsView: View {
         elevenLabsSTTAPIKeyDraft = viewModel.settings.elevenLabsSTTAPIKey
         elevenLabsSTTModelDraft = viewModel.settings.elevenLabsSTTModel
         elevenLabsSTTLanguageDraft = viewModel.settings.elevenLabsSTTLanguage
+        groqSTTAPIKeyDraft = viewModel.settings.groqSTTAPIKey
+        sttVocabularyDraft = viewModel.settings.sttVocabulary
     }
 
     private func isVoiceDraftDirty() -> Bool {
@@ -1933,6 +2118,8 @@ struct CompanionPanelSettingsView: View {
             || elevenLabsSTTAPIKeyDraft != viewModel.settings.elevenLabsSTTAPIKey
             || elevenLabsSTTModelDraft != viewModel.settings.elevenLabsSTTModel
             || elevenLabsSTTLanguageDraft != viewModel.settings.elevenLabsSTTLanguage
+            || groqSTTAPIKeyDraft != viewModel.settings.groqSTTAPIKey
+            || sttVocabularyDraft != viewModel.settings.sttVocabulary
     }
 
     private func updateDraftStatus(for section: CompanionPanelSettingsSection, isDirty: Bool) {

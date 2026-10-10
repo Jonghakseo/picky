@@ -222,6 +222,9 @@ enum PickySpeechPlaybackProviderFactory {
             return "elevenlabs"
         case .edge:
             return "edge"
+        case .groq:
+            // Groq is transcription-only; a stale TTS value keeps local playback.
+            return "local"
         }
     }
 }

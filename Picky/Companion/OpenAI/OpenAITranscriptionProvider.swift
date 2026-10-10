@@ -45,7 +45,9 @@ final class OpenAITranscriptionProvider: BuddyTranscriptionProvider {
         }
     }
 
-    let displayName = "OpenAI Speech to Text"
+    static let defaultDisplayName = "OpenAI Speech to Text"
+
+    let displayName: String
     let requiresSpeechRecognitionPermission = false
 
     var isConfigured: Bool { configuration.isConfigured }
@@ -54,15 +56,20 @@ final class OpenAITranscriptionProvider: BuddyTranscriptionProvider {
     private let configuration: OpenAIAudioConfiguration
     private let preferredLanguage: String?
     private let modelName: String
+    private let vocabulary: PickyTranscriptionVocabulary?
     private let urlSession: URLSession
 
     init(
         configuration: OpenAIAudioConfiguration = .fromEnvironment(),
         preferredLanguage: String? = nil,
         modelName: String = OpenAITranscriptionProvider.defaultModelName,
+        vocabulary: PickyTranscriptionVocabulary? = nil,
+        displayName: String = OpenAITranscriptionProvider.defaultDisplayName,
         urlSession: URLSession = .shared
     ) {
         self.configuration = configuration
+        self.vocabulary = vocabulary
+        self.displayName = displayName
         self.preferredLanguage = preferredLanguage?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         let trimmedModel = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
         self.modelName = trimmedModel.isEmpty ? OpenAITranscriptionProvider.defaultModelName : trimmedModel
@@ -88,7 +95,9 @@ final class OpenAITranscriptionProvider: BuddyTranscriptionProvider {
             transcriptionURL: transcriptionURL,
             modelName: modelName,
             preferredLanguage: preferredLanguage,
-            transcriptionPrompt: Self.defaultTranscriptionPrompt(keyterms: keyterms),
+            transcriptionPrompt: Self.defaultTranscriptionPrompt(
+                keyterms: vocabulary?.keyterms(merging: keyterms) ?? keyterms
+            ),
             urlSession: urlSession,
             targetSampleRate: Self.targetSampleRate,
             onTranscriptUpdate: onTranscriptUpdate,
@@ -219,7 +228,7 @@ private final class OpenAITranscriptionSession: BuddyStreamingTranscriptionSessi
         transcriptionTask = nil
     }
 
-    private static func transcribe(
+    fileprivate static func transcribe(
         wavData: Data,
         configuration: OpenAIAudioConfiguration,
         transcriptionURL: URL,
@@ -300,6 +309,50 @@ private final class OpenAITranscriptionSession: BuddyStreamingTranscriptionSessi
 
     private struct TranscriptionResponse: Decodable {
         let text: String
+    }
+}
+
+/// Outcome of the Settings "check connection" request.
+enum PickySTTConnectionCheckResult: Equatable {
+    case connected(milliseconds: Int)
+    case invalidKey
+    case rateLimited
+    case failed(statusCode: Int?)
+}
+
+extension OpenAITranscriptionProvider {
+    /// Sends one second of silence to the transcription endpoint. Any 2xx
+    /// response proves that the key, base URL and model are accepted; the
+    /// transcript itself is ignored.
+    static func checkConnection(
+        configuration: OpenAIAudioConfiguration,
+        modelName: String,
+        urlSession: URLSession = .shared
+    ) async -> PickySTTConnectionCheckResult {
+        guard configuration.isConfigured else { return .invalidKey }
+        let silence = Data(count: targetSampleRate * 2)
+        let wavData = BuddyWAVFileBuilder.buildWAVData(fromPCM16MonoAudio: silence, sampleRate: targetSampleRate)
+        let startedAt = Date()
+        do {
+            _ = try await OpenAITranscriptionSession.transcribe(
+                wavData: wavData,
+                configuration: configuration,
+                transcriptionURL: configuration.audioURL(forPath: "audio/transcriptions"),
+                modelName: modelName,
+                preferredLanguage: nil,
+                transcriptionPrompt: nil,
+                urlSession: urlSession
+            )
+            return .connected(milliseconds: Int(Date().timeIntervalSince(startedAt) * 1_000))
+        } catch OpenAIAudioProviderError.httpError(let statusCode, _) {
+            switch statusCode {
+            case 401, 403: return .invalidKey
+            case 429: return .rateLimited
+            default: return .failed(statusCode: statusCode)
+            }
+        } catch {
+            return .failed(statusCode: nil)
+        }
     }
 }
 

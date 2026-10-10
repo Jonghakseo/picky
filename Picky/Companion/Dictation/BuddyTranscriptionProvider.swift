@@ -35,6 +35,21 @@ enum BuddyTranscriptionProviderFactory {
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> any BuddyTranscriptionProvider {
         let requestedProvider = providerName(from: settings.sttProvider)
+        let vocabulary = PickyTranscriptionVocabulary(settings: settings)
+
+        if requestedProvider == "groq" {
+            let language = settings.groqSTTLanguage.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            let modelName = GroqTranscriptionDefaults.modelName(from: settings)
+            let provider = OpenAITranscriptionProvider(
+                configuration: makeGroqSTTConfiguration(settings: settings, environment: environment),
+                preferredLanguage: language,
+                modelName: modelName,
+                vocabulary: vocabulary,
+                displayName: GroqTranscriptionDefaults.displayName
+            )
+            print("🎙️ Transcription: using provider \(provider.displayName), model: \(modelName), language: \(language ?? "auto")")
+            return provider
+        }
 
         if requestedProvider == "openai" {
             let language = settings.openAISTTPreferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
@@ -45,7 +60,8 @@ enum BuddyTranscriptionProviderFactory {
             let provider = OpenAITranscriptionProvider(
                 configuration: makeOpenAISTTConfiguration(settings: settings, environment: environment),
                 preferredLanguage: language,
-                modelName: modelName
+                modelName: modelName,
+                vocabulary: vocabulary
             )
             print("🎙️ Transcription: using provider \(provider.displayName), model: \(modelName), language: \(language ?? "auto")")
             return provider
@@ -75,7 +91,8 @@ enum BuddyTranscriptionProviderFactory {
                     settings.azureOpenAIEndpoint,
                     apiKey: settings.azureOpenAIAPIKey
                 ),
-                preferredLanguage: language
+                preferredLanguage: language,
+                vocabulary: vocabulary
             )
             print("🎙️ Transcription: using provider \(provider.displayName), language: \(language ?? "auto")")
             return provider
@@ -105,10 +122,23 @@ enum BuddyTranscriptionProviderFactory {
         return OpenAIAudioConfiguration(apiKey: apiKey, baseURL: baseURL)
     }
 
+    /// Groq exposes Whisper through an OpenAI-compatible API, so it reuses the
+    /// OpenAI provider with a fixed base URL and its own key.
+    static func makeGroqSTTConfiguration(
+        settings: PickySettings,
+        environment: [String: String]
+    ) -> OpenAIAudioConfiguration {
+        let apiKey = settings.groqSTTAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            ?? (environment.isEmpty ? nil : AzureOpenAIKeychainStore.value(for: "GROQ_API_KEY", environment: environment))
+        return OpenAIAudioConfiguration(apiKey: apiKey, baseURL: GroqTranscriptionDefaults.baseURL)
+    }
+
     private static func providerName(from selection: PickyVoiceProviderSelection) -> String? {
         switch selection {
         case .local:
             return "local"
+        case .groq:
+            return "groq"
         case .openai:
             return "openai"
         case .azure:
@@ -126,5 +156,19 @@ enum BuddyTranscriptionProviderFactory {
 private extension String {
     var nilIfEmpty: String? {
         isEmpty ? nil : self
+    }
+}
+
+enum GroqTranscriptionDefaults {
+    static let baseURL = URL(string: "https://api.groq.com/openai")!
+    static let displayName = "Groq Speech to Text"
+    /// Highest-accuracy Groq Whisper model; the free tier limits are the same
+    /// for both Groq Whisper models, so accuracy is the default.
+    static let accurateModelName = "whisper-large-v3"
+    static let fastModelName = "whisper-large-v3-turbo"
+    static let consoleKeysURL = URL(string: "https://console.groq.com/keys")!
+
+    static func modelName(from settings: PickySettings) -> String {
+        settings.groqSTTModel.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? accurateModelName
     }
 }

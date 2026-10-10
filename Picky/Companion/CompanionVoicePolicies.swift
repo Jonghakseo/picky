@@ -120,6 +120,11 @@ struct PickyVoiceProviderSettings: Equatable {
     let elevenLabsSTTAPIKey: String
     let elevenLabsSTTModel: String
     let elevenLabsSTTLanguage: String
+    let groqSTTAPIKey: String
+    let groqSTTModel: String
+    let groqSTTLanguage: String
+    let sttVocabulary: String
+    let sttIncludesContextTerms: Bool
 
     init(_ settings: PickySettings) {
         sttProvider = settings.sttProvider
@@ -148,6 +153,11 @@ struct PickyVoiceProviderSettings: Equatable {
         elevenLabsSTTAPIKey = settings.elevenLabsSTTAPIKey
         elevenLabsSTTModel = settings.elevenLabsSTTModel
         elevenLabsSTTLanguage = settings.elevenLabsSTTLanguage
+        groqSTTAPIKey = settings.groqSTTAPIKey
+        groqSTTModel = settings.groqSTTModel
+        groqSTTLanguage = settings.groqSTTLanguage
+        sttVocabulary = settings.sttVocabulary
+        sttIncludesContextTerms = settings.sttIncludesContextTerms
     }
 }
 

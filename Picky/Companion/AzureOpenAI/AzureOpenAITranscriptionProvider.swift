@@ -58,14 +58,17 @@ final class AzureOpenAITranscriptionProvider: BuddyTranscriptionProvider {
 
     private let configuration: AzureOpenAIAudioConfiguration
     private let preferredLanguage: String?
+    private let vocabulary: PickyTranscriptionVocabulary?
     private let urlSession: URLSession
 
     init(
         configuration: AzureOpenAIAudioConfiguration = .fromTranscriptionEndpointURL(nil, apiKey: nil),
         preferredLanguage: String? = nil,
+        vocabulary: PickyTranscriptionVocabulary? = nil,
         urlSession: URLSession = .shared
     ) {
         self.configuration = configuration
+        self.vocabulary = vocabulary
         self.preferredLanguage = preferredLanguage?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.urlSession = urlSession
     }
@@ -90,7 +93,9 @@ final class AzureOpenAITranscriptionProvider: BuddyTranscriptionProvider {
             configuration: configuration,
             transcriptionURL: transcriptionURL,
             preferredLanguage: preferredLanguage,
-            transcriptionPrompt: Self.defaultTranscriptionPrompt(keyterms: keyterms),
+            transcriptionPrompt: Self.defaultTranscriptionPrompt(
+                keyterms: vocabulary?.keyterms(merging: keyterms) ?? keyterms
+            ),
             urlSession: urlSession,
             targetSampleRate: Self.targetSampleRate,
             onTranscriptUpdate: onTranscriptUpdate,

@@ -34658,6 +34658,630 @@
           }
         }
       }
+    },
+    "settings.voice.groq.provider": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groq (free)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groq (무료)"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.caption.local": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transcribes on this Mac. No key needed."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac에서 바로 받아 적어요. 키가 필요 없어요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.caption.groq": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free for up to 2,000 requests a day. At 10 seconds per request, that's over 5 hours of speech a day.\nAfter 20 requests in a minute, you'll need to wait a moment. Your speech is sent to Groq's servers."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료로 하루 2,000번까지 쓸 수 있어요. 한 번에 10초씩 말하면 하루 5시간이 넘는 양이에요.\n1분에 20번을 넘기면 잠깐 기다려야 해요. 말한 내용은 Groq 서버로 보내져요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.caption.openai": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI charges for what you use. Your speech is sent to OpenAI's servers."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용한 만큼 OpenAI에 요금이 나가요. 말한 내용은 OpenAI 서버로 보내져요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.caption.azure": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uses your Azure OpenAI deployment. Your speech is sent to Azure."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내 Azure OpenAI 배포로 받아 적어요. 말한 내용은 Azure로 보내져요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.caption.elevenLabs": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ElevenLabs charges for what you use. Your speech is sent to ElevenLabs' servers."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용한 만큼 ElevenLabs에 요금이 나가요. 말한 내용은 ElevenLabs 서버로 보내져요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.upsell.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "English terms often come out wrong?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "영어 용어가 자주 틀리나요?"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.upsell.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groq is free and transcribes mixed Korean and English more accurately."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groq는 무료이고 한국어와 영어가 섞인 말을 더 정확하게 받아 적어요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.upsell.action": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch to Groq"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groq로 바꾸기"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.apiKey": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API key"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API 키"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.check": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check connection"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 확인"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.checking": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인 중"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.check.connected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected. The response took %1$@ s."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결됐어요. 응답까지 %1$@초 걸렸어요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.check.invalidKey": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This key doesn't work. Copy it again from the %1$@ console and paste it here."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키가 맞지 않아요. %1$@ 콘솔에서 키를 다시 복사해 붙여 넣어 주세요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.check.rateLimited.groq": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You've reached the free usage limit. Try again in a moment."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 사용량을 넘었어요. 잠시 뒤에 다시 쓸 수 있어요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.check.rateLimited.openai": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You've hit a rate limit or run out of credit. Check your usage in the OpenAI console."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요청 한도를 넘었거나 크레딧이 부족해요. OpenAI 콘솔에서 사용량을 확인해 주세요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.check.failedStatus": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't connect (HTTP %1$lld)."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결하지 못했어요. (HTTP %1$lld)"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.check.failedNetwork": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't connect. Check your internet connection."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결하지 못했어요. 인터넷 연결을 확인해 주세요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.keyGuide.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Don't have a key?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키가 없나요?"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.keyGuide.groq.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in to the Groq console. You can sign up with Google or GitHub."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groq 콘솔에 로그인하세요. Google이나 GitHub 계정으로 가입할 수 있어요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.keyGuide.groq.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In API Keys, click Create API Key."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API Keys에서 Create API Key를 누르세요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.keyGuide.groq.3": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy the new key and paste it above. The key is shown only once."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "만들어진 키를 복사해 위 칸에 붙여 넣으세요. 키는 한 번만 보여요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.keyGuide.openai.1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in to OpenAI Platform and add a payment method."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI Platform에 로그인하고 결제 수단을 등록하세요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.keyGuide.openai.2": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In API keys, click Create new secret key."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API keys에서 Create new secret key를 누르세요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.keyGuide.openai.3": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy the new key and paste it above. The key is shown only once."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "만들어진 키를 복사해 위 칸에 붙여 넣으세요. 키는 한 번만 보여요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.keyGuide.open": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open %1$@ console"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 콘솔 열기"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.consoleLink.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manage keys and usage in the %1$@ console."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키 관리와 사용량은 %1$@ 콘솔에서 볼 수 있어요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.consoleLink.action": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open console"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "콘솔 열기"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.model": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.model.accurate": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accuracy first"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "정확도 우선"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.model.accurate.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Better with names and mixed Korean and English."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "고유명사와 영어가 섞인 말에 더 강해요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.model.fast": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speed first"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "속도 우선"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.model.fast.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A little faster, but may get more words wrong."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "조금 더 빠르지만 틀리는 말이 늘 수 있어요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.language": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spoken language"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "말하는 언어"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.language.auto": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detect automatically"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동 감지"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.vocabulary": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Frequent words"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자주 쓰는 단어"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.vocabulary.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. Picky, Pickle, Creatrip"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예: Picky, Pickle, 크리에이트립"
+          }
+        }
+      }
+    },
+    "settings.voice.stt.vocabulary.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "List names, product names, and terms separated by commas, and they'll be written with that spelling."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름, 제품명, 전문 용어를 쉼표로 적으면 그 표기대로 받아 적어요."
+          }
+        }
+      }
+    },
+    "settings.voice.stt.vocabulary.context": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Also send the current app and window names"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금 보고 있는 앱과 창 이름도 함께 보내기"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

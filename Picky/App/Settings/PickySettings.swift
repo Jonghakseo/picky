@@ -15,6 +15,8 @@ enum PickyVoiceProviderSelection: String, Codable, CaseIterable, Identifiable {
     case elevenLabs
     /// Online, explicit opt-in only; unavailable for speech transcription.
     case edge
+    /// Groq-hosted Whisper through its OpenAI-compatible API. Transcription only.
+    case groq
 
     var id: String { rawValue }
 
@@ -25,6 +27,7 @@ enum PickyVoiceProviderSelection: String, Codable, CaseIterable, Identifiable {
         case .azure: "Azure OpenAI"
         case .elevenLabs: "ElevenLabs"
         case .edge: L10n.t("settings.voice.edge.provider")
+        case .groq: "Groq"
         }
     }
 
@@ -43,13 +46,15 @@ enum PickyVoiceProviderSelection: String, Codable, CaseIterable, Identifiable {
             return "ElevenLabs"
         case .edge:
             return L10n.t("settings.voice.edge.provider")
+        case .groq:
+            return L10n.t("settings.voice.groq.provider")
         }
     }
 
     static func cases(for capability: PickyVoiceProviderCapability) -> [PickyVoiceProviderSelection] {
         switch capability {
         case .transcription:
-            [.local, .openai, .azure, .elevenLabs]
+            [.local, .groq, .openai, .azure, .elevenLabs]
         case .speechPlayback:
             [.local, .openai, .azure, .elevenLabs, .edge]
         }
@@ -685,6 +690,17 @@ struct PickySettings: Codable, Equatable {
     var elevenLabsSTTAPIKey: String
     var elevenLabsSTTModel: String
     var elevenLabsSTTLanguage: String
+    // Groq STT (OpenAI-compatible Whisper). Empty model falls back to
+    // `GroqTranscriptionDefaults.modelName`; empty language means auto-detect.
+    var groqSTTAPIKey: String
+    var groqSTTModel: String
+    var groqSTTLanguage: String
+    /// Comma- or newline-separated spellings sent as transcription hints by
+    /// prompt-capable providers (Groq, OpenAI, Azure). Placed before automatic
+    /// context terms so they survive prompt truncation.
+    var sttVocabulary: String
+    /// Whether the frontmost app/window terms are added to transcription hints.
+    var sttIncludesContextTerms: Bool
     var appearance: PickyAppearanceMode
     var notifications: PickyNotificationPreferences
     var cursor: PickyCursorPreferences
@@ -853,6 +869,11 @@ struct PickySettings: Codable, Equatable {
         elevenLabsSTTAPIKey: String = "",
         elevenLabsSTTModel: String = "",
         elevenLabsSTTLanguage: String = "",
+        groqSTTAPIKey: String = "",
+        groqSTTModel: String = "",
+        groqSTTLanguage: String = "",
+        sttVocabulary: String = PickyTranscriptionVocabulary.defaultTermsText,
+        sttIncludesContextTerms: Bool = true,
         appearance: PickyAppearanceMode = .dark,
         notifications: PickyNotificationPreferences = .defaults,
         cursor: PickyCursorPreferences = .defaults,
@@ -930,6 +951,11 @@ struct PickySettings: Codable, Equatable {
         self.elevenLabsSTTAPIKey = elevenLabsSTTAPIKey
         self.elevenLabsSTTModel = elevenLabsSTTModel
         self.elevenLabsSTTLanguage = elevenLabsSTTLanguage
+        self.groqSTTAPIKey = groqSTTAPIKey
+        self.groqSTTModel = groqSTTModel
+        self.groqSTTLanguage = groqSTTLanguage
+        self.sttVocabulary = sttVocabulary
+        self.sttIncludesContextTerms = sttIncludesContextTerms
         self.appearance = appearance
         self.notifications = notifications
         self.cursor = cursor
@@ -1112,6 +1138,10 @@ struct PickySettings: Codable, Equatable {
         copy.elevenLabsSTTAPIKey = elevenLabsSTTAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.elevenLabsSTTModel = elevenLabsSTTModel.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.elevenLabsSTTLanguage = elevenLabsSTTLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.groqSTTAPIKey = groqSTTAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.groqSTTModel = groqSTTModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.groqSTTLanguage = groqSTTLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.sttVocabulary = sttVocabulary.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.edgeTTSVoice = edgeTTSVoice.trimmingCharacters(in: .whitespacesAndNewlines)
         if copy.edgeTTSVoice.isEmpty { copy.edgeTTSVoice = "ko-KR-SunHiNeural" }
         copy.mainAgentModelPattern = mainAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1160,6 +1190,11 @@ struct PickySettings: Codable, Equatable {
         case elevenLabsSTTAPIKey
         case elevenLabsSTTModel
         case elevenLabsSTTLanguage
+        case groqSTTAPIKey
+        case groqSTTModel
+        case groqSTTLanguage
+        case sttVocabulary
+        case sttIncludesContextTerms
         case appearance
         case notifications
         case cursor
@@ -1243,6 +1278,11 @@ struct PickySettings: Codable, Equatable {
         elevenLabsSTTAPIKey = try container.decodeIfPresent(String.self, forKey: .elevenLabsSTTAPIKey) ?? defaults.elevenLabsSTTAPIKey
         elevenLabsSTTModel = try container.decodeIfPresent(String.self, forKey: .elevenLabsSTTModel) ?? defaults.elevenLabsSTTModel
         elevenLabsSTTLanguage = try container.decodeIfPresent(String.self, forKey: .elevenLabsSTTLanguage) ?? defaults.elevenLabsSTTLanguage
+        groqSTTAPIKey = try container.decodeIfPresent(String.self, forKey: .groqSTTAPIKey) ?? defaults.groqSTTAPIKey
+        groqSTTModel = try container.decodeIfPresent(String.self, forKey: .groqSTTModel) ?? defaults.groqSTTModel
+        groqSTTLanguage = try container.decodeIfPresent(String.self, forKey: .groqSTTLanguage) ?? defaults.groqSTTLanguage
+        sttVocabulary = try container.decodeIfPresent(String.self, forKey: .sttVocabulary) ?? defaults.sttVocabulary
+        sttIncludesContextTerms = try container.decodeIfPresent(Bool.self, forKey: .sttIncludesContextTerms) ?? defaults.sttIncludesContextTerms
         appearance = try container.decodeIfPresent(PickyAppearanceMode.self, forKey: .appearance) ?? defaults.appearance
         notifications = try container.decodeIfPresent(PickyNotificationPreferences.self, forKey: .notifications) ?? defaults.notifications
         cursor = try container.decodeIfPresent(PickyCursorPreferences.self, forKey: .cursor) ?? defaults.cursor

@@ -407,28 +407,28 @@ export function Composer(props: ComposerProps): JSX.Element {
                   event.currentTarget.value = "";
                 }}
               />
+              <button
+                class={`toolbar-icon${dictation.state.kind === "listening" ? " is-active" : ""}`}
+                type="button"
+                aria-label={t("hud.composer.mic.accessibilityLabel")}
+                disabled={dictation.state.kind === "transcribing"}
+                onClick={dictation.toggle}
+              >
+                {dictation.state.kind === "listening" ? <Waveform /> : <Mic />}
+              </button>
               {bashMode !== "none" ? (
                 <span class={`bash-badge${bashMode === "private" ? " is-private" : ""}`}>
                   <Terminal />
                   <span class="bash-badge-text">{bashMode === "private" ? "!!" : "!"}</span>
                 </span>
               ) : null}
-              {isMain ? null : (
-                <SettingsChip session={session} onOpen={() => void openSettings()} />
-              )}
             </div>
             <div class="actions-trailing">
-              <div class="actions-tools">
-                <button
-                  class={`toolbar-icon${dictation.state.kind === "listening" ? " is-active" : ""}`}
-                  type="button"
-                  aria-label={t("hud.composer.mic.accessibilityLabel")}
-                  disabled={dictation.state.kind === "transcribing"}
-                  onClick={dictation.toggle}
-                >
-                  {dictation.state.kind === "listening" ? <Waveform /> : <Mic />}
-                </button>
-              </div>
+              {isMain ? null : (
+                <div class="actions-tools">
+                  <SettingsChip session={session} onOpen={() => void openSettings()} />
+                </div>
+              )}
               <div class="actions-primary">
                 {showStop ? (
                   <button

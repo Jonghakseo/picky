@@ -430,18 +430,26 @@ struct PickyConversationComposerView: View {
         .frame(height: PickyComposerToolbarMetrics.controlSize)
     }
 
-    /// Left: what goes into the message, then this Pickle's settings chip.
-    /// It yields width first (the chip's model name shrinks) so the trailing
-    /// send/stop actions are never clipped.
+    /// Left: tools that put something into the message (attach, panel, voice).
+    /// Their positions never depend on the model name's width. The bash badge
+    /// comes last so it does not shift the icons when it appears.
     private var leadingActions: some View {
         HStack(spacing: DS.Spacing.space1) {
             attachmentButton
+            PickyComposerUtilityPanelButton(isOpen: isUtilityPanelOpen,
+                isShortcutHintVisible: isCommandShortcutHintVisible, action: onToggleUtilityPanel)
+            if let composerDictation {
+                PickyComposerMicButton(
+                    controller: composerDictation,
+                    sessionID: session.id,
+                    isShortcutHintVisible: isCommandShortcutHintVisible
+                )
+            }
             if effectiveBashMode != .none {
                 PickyComposerBashModeBadge(mode: effectiveBashMode)
             }
-            runtimeControlsBar
         }
-        .layoutPriority(-1)
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var attachmentButton: some View {
@@ -890,29 +898,22 @@ struct PickyConversationComposerView: View {
 
     private static let editorTextInsetHeight: CGFloat = 2
 
-    /// Right: panel toggle and voice, then the primary send/stop actions.
+    /// Right: how the message is sent. This Pickle's settings chip sits next
+    /// to send/stop and yields width first (the model name shrinks) so the
+    /// primary actions are never clipped.
     private var trailingActions: some View {
         HStack(spacing: DS.Spacing.space1) {
-            HStack(spacing: DS.Spacing.space1) {
-                PickyComposerUtilityPanelButton(isOpen: isUtilityPanelOpen,
-                    isShortcutHintVisible: isCommandShortcutHintVisible, action: onToggleUtilityPanel)
-                if let composerDictation {
-                    PickyComposerMicButton(
-                        controller: composerDictation,
-                        sessionID: session.id,
-                        isShortcutHintVisible: isCommandShortcutHintVisible
-                    )
-                }
-            }
-            .padding(.trailing, DS.Spacing.space1)
+            runtimeControlsBar
+                .padding(.trailing, DS.Spacing.space1)
+                .layoutPriority(-1)
             HStack(spacing: DS.Spacing.space2) {
                 sendButton
                 if isStopButtonVisible {
                     stopButton
                 }
             }
+            .fixedSize(horizontal: true, vertical: false)
         }
-        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var sendButton: some View {

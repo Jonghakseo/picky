@@ -1651,24 +1651,27 @@
   height: var(--composer-control-size);
 }
 
-/* leadingActions: HStack(spacing: space1) [attach][BASH][settings chip], with
- * layoutPriority(-1) so it yields width before the trailing actions. */
+/* leadingActions: HStack(spacing: space1) [attach][work panel][mic][BASH], fixed
+ * size. The phone has no work panel, so it shows [attach][mic][BASH]. */
 .actions-leading {
   display: flex;
   align-items: center;
   gap: var(--ds-space-1);
-  flex: 1 1 auto;
-  min-width: 0;
+  flex: none;
 }
 
-/* trailingActions: HStack(space1) { HStack(space1) { work panel, mic }
- * .padding(.trailing, space1); HStack(space2) { send, stop } }, fixed size. */
+/* trailingActions: HStack(space1) { settings chip .padding(.trailing, space1)
+ * .layoutPriority(-1); HStack(space2) { send, stop } fixed size }. The chip's
+ * model name yields width first so send/stop are never clipped. */
 .actions-trailing {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--ds-space-1);
-  margin-left: var(--ds-space-2);
-  flex: none;
+  margin-left: auto;
+  padding-left: var(--ds-space-2);
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .actions-tools {
@@ -1676,12 +1679,15 @@
   align-items: center;
   gap: var(--ds-space-1);
   padding-right: var(--ds-space-1);
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .actions-primary {
   display: flex;
   align-items: center;
   gap: var(--ds-space-2);
+  flex: none;
 }
 
 /* PickyComposerToolbarIcon: 10.5pt semibold glyph in a controlSize square, inside

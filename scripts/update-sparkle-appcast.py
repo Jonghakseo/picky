@@ -5,6 +5,11 @@ The release workflow calls this after the signed Sparkle update zip is uploaded.
 It prepends the new item and removes an older item with the same Sparkle build
 number on the same channel so GitHub Actions reruns replace the appcast entry
 instead of duplicating it.
+
+The release workflow also passes ``--require-existing`` (every publish after the
+first one) so a failed or empty download cannot silently bootstrap a fresh feed,
+and ``--require-no-shrink`` so a publish can never drop a previously listed
+update from the feed it uploads.
 """
 
 from __future__ import annotations
@@ -39,9 +44,18 @@ def create_empty_appcast(repository: str) -> ET.ElementTree:
     return ET.ElementTree(root)
 
 
-def load_or_create_appcast(path: Path, repository: str) -> ET.ElementTree:
+class AppcastError(ValueError):
+    pass
+
+
+def load_or_create_appcast(path: Path, repository: str, *, require_existing: bool = False) -> ET.ElementTree:
     if path.exists() and path.stat().st_size > 0:
         return ET.parse(path)
+    if require_existing:
+        raise AppcastError(
+            f"existing appcast {path} is missing or empty; refusing to bootstrap a new feed "
+            "over a published one"
+        )
     return create_empty_appcast(repository)
 
 
@@ -106,6 +120,19 @@ def ensure_explicit_stable_channels(tree: ET.ElementTree) -> None:
         item.insert(title_index + 1 if title_index >= 0 else 0, channel)
 
 
+def item_keys(tree: ET.ElementTree) -> set[tuple[str | None, str]]:
+    return {(item_version(item), item_channel(item)) for item in appcast_channel(tree).findall("item")}
+
+
+def assert_no_items_dropped(
+    keys_before: set[tuple[str | None, str]], keys_after: set[tuple[str | None, str]]
+) -> None:
+    dropped = sorted(keys_before - keys_after, key=str)
+    if dropped:
+        listed = ", ".join(f"{version} ({channel})" for version, channel in dropped)
+        raise AppcastError(f"update would drop existing appcast items: {listed}")
+
+
 def prepend_replacing_duplicate(tree: ET.ElementTree, new_item: ET.Element) -> None:
     ensure_explicit_stable_channels(tree)
     channel = appcast_channel(tree)
@@ -141,9 +168,12 @@ def update_appcast(
     ed_signature: str,
     length_bytes: str,
     pub_date: str | None = None,
+    require_existing: bool = False,
+    require_no_shrink: bool = False,
 ) -> None:
     resolved_pub_date = pub_date or email.utils.formatdate(usegmt=True)
-    tree = load_or_create_appcast(appcast_path, repository)
+    tree = load_or_create_appcast(appcast_path, repository, require_existing=require_existing)
+    keys_before = item_keys(tree)
     new_item = build_item(
         marketing_version=marketing_version,
         build_number=build_number,
@@ -154,6 +184,8 @@ def update_appcast(
         pub_date=resolved_pub_date,
     )
     prepend_replacing_duplicate(tree, new_item)
+    if require_no_shrink:
+        assert_no_items_dropped(keys_before, item_keys(tree))
     write_appcast(tree, appcast_path)
 
 
@@ -168,6 +200,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--ed-signature", required=True)
     parser.add_argument("--length-bytes", required=True)
     parser.add_argument("--pub-date", default=None)
+    parser.add_argument(
+        "--require-existing",
+        action="store_true",
+        help="fail when --appcast is missing or empty instead of creating a new feed",
+    )
+    parser.add_argument(
+        "--require-no-shrink",
+        action="store_true",
+        help="fail when the update would remove an item (build number + channel) already in the feed",
+    )
     return parser.parse_args(argv)
 
 
@@ -184,6 +226,8 @@ def main(argv: list[str]) -> int:
             ed_signature=args.ed_signature,
             length_bytes=args.length_bytes,
             pub_date=args.pub_date,
+            require_existing=args.require_existing,
+            require_no_shrink=args.require_no_shrink,
         )
     except Exception as error:  # noqa: BLE001 - CLI should print concise failures
         print(f"update-sparkle-appcast: {error}", file=sys.stderr)

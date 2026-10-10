@@ -106,6 +106,66 @@ class UpdateSparkleAppcastTests(unittest.TestCase):
             self.assertEqual(channels["991"], "stable")
             self.assertEqual(channels["992"], "beta")
 
+    def test_require_existing_refuses_to_bootstrap_over_a_missing_or_empty_feed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing.xml"
+            empty = Path(tmp) / "empty.xml"
+            empty.write_text("", encoding="utf-8")
+
+            for path in (missing, empty):
+                with self.assertRaises(update_sparkle_appcast.AppcastError):
+                    self.update(path, require_existing=True)
+                self.assertFalse(path.exists() and path.stat().st_size > 0)
+
+    def test_require_existing_accepts_a_published_feed_and_keeps_its_items(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "appcast.xml"
+            self.update(path, build_number="991")
+
+            self.update(path, build_number="992", require_existing=True, require_no_shrink=True)
+
+            versions = [item.findtext(f"{SPARKLE}version") for item in self.items(path)]
+            self.assertEqual(versions, ["992", "991"])
+
+    def test_require_no_shrink_allows_rerun_replacement_of_the_same_build(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "appcast.xml"
+            self.update(path, download_url="https://example.com/old.zip")
+
+            self.update(path, download_url="https://example.com/new.zip", require_no_shrink=True)
+
+            items = self.items(path)
+            self.assertEqual(len(items), 1)
+            self.assertEqual(items[0].find("enclosure").attrib["url"], "https://example.com/new.zip")
+
+    def test_dropped_items_are_reported_by_build_number_and_channel(self):
+        before = {("991", "stable"), ("992", "beta")}
+
+        update_sparkle_appcast.assert_no_items_dropped(before, before | {("993", "beta")})
+        with self.assertRaisesRegex(update_sparkle_appcast.AppcastError, r"991 \(stable\)"):
+            update_sparkle_appcast.assert_no_items_dropped(before, {("992", "beta")})
+
+    def test_cli_exits_nonzero_when_required_feed_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "appcast.xml"
+
+            status = update_sparkle_appcast.main(
+                [
+                    "--appcast", str(path),
+                    "--repository", "Jonghakseo/picky",
+                    "--marketing-version", "0.7.1",
+                    "--build-number", "992",
+                    "--release-channel", "stable",
+                    "--download-url", "https://example.com/a.zip",
+                    "--ed-signature", "sig",
+                    "--length-bytes", "1",
+                    "--require-existing",
+                ]
+            )
+
+            self.assertEqual(status, 1)
+            self.assertFalse(path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

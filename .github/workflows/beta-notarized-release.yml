@@ -64,6 +64,12 @@ jobs:
       # historical release tags predate the isolated UI-test command.
       ref: ${{ github.event.release.tag_name || inputs.tag_name }}
 
+  agentd-tests:
+    name: Agentd typecheck and unit tests
+    uses: ./.github/workflows/agentd-tests.yml
+    with:
+      ref: ${{ github.event.release.tag_name || inputs.tag_name }}
+
   # Building and notarizing does not publish anything, so it runs alongside the
   # UI gate. `publish-release` needs both jobs, so a failed or unmeasurable gate
   # still blocks every GitHub Release, appcast, and Slack side effect.
@@ -71,6 +77,11 @@ jobs:
     name: Build and notarize dmg
     runs-on: ${{ vars.PICKY_MACOS_RUNNER || 'macos-15' }}
     timeout-minutes: 90
+    env:
+      # Xcode 26.3 miscompiles implicit isolated deinit (see
+      # docs/known-issues/xcode-26-3-isolated-deinit.md). Pin every step of this
+      # job, including xcodebuild, notarytool, and stapler, to 16.3.
+      DEVELOPER_DIR: /Applications/Xcode_16.3.app/Contents/Developer
     outputs:
       meta_create_release_if_missing: ${{ steps.release_meta.outputs.create_release_if_missing }}
       meta_prerelease: ${{ steps.release_meta.outputs.prerelease }}
@@ -167,6 +178,13 @@ jobs:
             metadata_args+=(--allow-legacy)
           fi
           release_metadata="$("${metadata_args[@]}")"
+          # Stable must ship the final beta's commit and build numbers must keep
+          # increasing. Historical (legacy) tags predate that bookkeeping.
+          if [[ "$(jq -r .tagPolicy <<<"${release_metadata}")" == "canonical" ]]; then
+            python3 .release-policy/scripts/release-version-policy.py check-lineage \
+              --tag "${target_tag}" \
+              --repo "${GITHUB_WORKSPACE}"
+          fi
           rm -rf "${GITHUB_WORKSPACE}/.release-policy"
           marketing_version="$(jq -r .marketingVersion <<<"${release_metadata}")"
           tag_policy="$(jq -r .tagPolicy <<<"${release_metadata}")"
@@ -210,6 +228,21 @@ jobs:
             echo "GitHub Release does not exist for ${TARGET_TAG}, and create_release_if_missing=false" >&2
             exit 1
           fi
+
+      - name: Verify pinned Xcode 16.3
+        run: |
+          set -euo pipefail
+          if [[ ! -x "${DEVELOPER_DIR}/usr/bin/xcodebuild" ]]; then
+            echo "Xcode 16.3 not found at ${DEVELOPER_DIR}; the runner image no longer provides it." >&2
+            exit 1
+          fi
+          actual_version="$(xcodebuild -version)"
+          echo "${actual_version}"
+          if [[ "${actual_version}" != $'Xcode 16.3\nBuild version 16E140' ]]; then
+            echo "Expected Xcode 16.3 (16E140) from DEVELOPER_DIR=${DEVELOPER_DIR}" >&2
+            exit 1
+          fi
+          [[ "$(xcode-select -p)" == "${DEVELOPER_DIR}" ]]
 
       - name: Show toolchain versions
         id: toolchain
@@ -360,6 +393,43 @@ jobs:
           /usr/bin/lipo -info "${app}/Contents/MacOS/${APP_NAME}"
           cat "${app}/Contents/Resources/PickyBuildInfo.json"
 
+      - name: Verify packaged app channel and Node runtime entitlements
+        env:
+          EXPECTED_RELEASE_CHANNEL: ${{ steps.release_meta.outputs.release_channel }}
+        run: |
+          set -euo pipefail
+          app="${PWD}/build/package/export/${APP_NAME}.app"
+
+          # An app without the right releaseChannel falls back to alpha at
+          # runtime, which silently turns Sparkle updates off.
+          actual_channel="$(jq -r .releaseChannel "${app}/Contents/Resources/PickyBuildInfo.json")"
+          case "${actual_channel}" in
+            stable|beta|alpha) ;;
+            *)
+              echo "PickyBuildInfo.json releaseChannel must be stable, beta, or alpha; got '${actual_channel}'" >&2
+              exit 1
+              ;;
+          esac
+          if [[ "${actual_channel}" != "${EXPECTED_RELEASE_CHANNEL}" ]]; then
+            echo "PickyBuildInfo.json releaseChannel '${actual_channel}' does not match requested '${EXPECTED_RELEASE_CHANNEL}'" >&2
+            exit 1
+          fi
+
+          # The final app re-sign above must not strip V8's JIT entitlement from
+          # the bundled Node, or every daemon launch dies under the hardened runtime.
+          node_bin="${app}/Contents/Resources/agentd-runtime/bin/node"
+          if [[ ! -x "${node_bin}" ]]; then
+            echo "Bundled Node runtime missing at ${node_bin}" >&2
+            exit 1
+          fi
+          node_entitlements="$(/usr/bin/codesign -d --entitlements :- "${node_bin}" 2>/dev/null)"
+          allow_jit="$(/usr/bin/plutil -extract 'com\.apple\.security\.cs\.allow-jit' raw -o - - <<<"${node_entitlements}" 2>/dev/null || true)"
+          if [[ "${allow_jit}" != "true" ]]; then
+            echo "Bundled Node is missing com.apple.security.cs.allow-jit after signing" >&2
+            exit 1
+          fi
+          echo "releaseChannel=${actual_channel}; Node allow-jit entitlement present"
+
       - name: Create, sign, notarize, and staple DMG
         id: package
         env:
@@ -446,6 +516,30 @@ jobs:
 
           printf 'Final dmg: %s\nSHA256: %s\n' "${final_dmg}" "${sha256}"
 
+      # The DMG is notarized once and the ticket is stapled to the DMG, then to the
+      # export app afterwards. The app copy inside the DMG was staged before that,
+      # so it carries no stapled ticket and a Mac that is offline at first launch
+      # falls back to an online Gatekeeper check. Report that state without
+      # failing the release; stapling the app first costs a second notarization.
+      - name: Report stapled state of the app inside the DMG
+        env:
+          FINAL_DMG: ${{ steps.package.outputs.final_dmg }}
+        run: |
+          set -euo pipefail
+          mount_point="$(mktemp -d "${RUNNER_TEMP}/picky-dmg-check.XXXXXX")"
+          hdiutil attach "${FINAL_DMG}" -readonly -nobrowse -noverify -mountpoint "${mount_point}" >/dev/null
+          trap 'hdiutil detach "${mount_point}" -quiet || true' EXIT
+          dmg_app="${mount_point}/${APP_NAME}.app"
+          if [[ ! -d "${dmg_app}" ]]; then
+            echo "${APP_NAME}.app is missing from ${FINAL_DMG}" >&2
+            exit 1
+          fi
+          if xcrun stapler validate "${dmg_app}"; then
+            echo "App inside the DMG has a stapled notarization ticket."
+          else
+            echo "::warning title=App inside DMG is not stapled::Offline first launch of an app dragged out of the DMG needs an online Gatekeeper check. Staple the app before building the DMG to remove that dependency."
+          fi
+
       - name: Sign Sparkle update zip
         id: sparkle
         if: ${{ steps.release_meta.outputs.release_channel != 'alpha' }}
@@ -528,17 +622,24 @@ jobs:
 
   publish-release:
     name: Publish release after UI gate
-    needs: [isolated-ui, build-notarized-release]
+    needs: [isolated-ui, agentd-tests, build-notarized-release]
     runs-on: ${{ vars.PICKY_MACOS_RUNNER || 'macos-15' }}
     timeout-minutes: 30
+    # appcast.xml is read, edited, and re-uploaded as one file on the shared
+    # auto-update release. Two publishes at once would drop one entry, so every
+    # release (any tag) queues behind the one running.
+    concurrency:
+      group: picky-appcast-publish
+      cancel-in-progress: false
 
     steps:
-      # Publishing helpers such as update-sparkle-appcast.py come from the
-      # release ref, exactly as when this ran inside the build job.
-      - name: Check out release ref
+      # The appcast helper comes from the default branch, like the other release
+      # policy helpers, so rerunning a historical tag still gets the current
+      # safety options. Nothing in this job needs the tagged source.
+      - name: Check out current release policy
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.build-notarized-release.outputs.meta_target_ref }}
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 1
 
       - name: Download notarized release payload
@@ -623,11 +724,23 @@ jobs:
           appcast_path="${appcast_dir}/appcast.xml"
           download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TARGET_TAG}/${UPDATE_ZIP_NAME}"
 
-          # Pull the existing feed off the auto-update release. The helper
-          # bootstraps a fresh appcast if this is the first published update.
-          gh release download auto-update --pattern appcast.xml --dir "${appcast_dir}" 2>/dev/null || true
+          # Pull the existing feed off the auto-update release. Only a release
+          # without an appcast.xml asset (the very first update) may start from
+          # an empty feed. Any other failure must stop here, because publishing
+          # over a feed we failed to read would delete every earlier update.
+          # `gh release view` failing (no release, auth, network) aborts via set -e.
+          asset_names="$(gh release view auto-update --json assets --jq '.assets[].name')"
+          appcast_args=()
+          if grep -qxF appcast.xml <<<"${asset_names}"; then
+            gh release download auto-update --pattern appcast.xml --dir "${appcast_dir}"
+            appcast_args+=(--require-existing)
+          else
+            echo "auto-update has no appcast.xml asset yet; bootstrapping a new feed." >&2
+          fi
 
           python3 scripts/update-sparkle-appcast.py \
+            ${appcast_args[@]+"${appcast_args[@]}"} \
+            --require-no-shrink \
             --appcast "${appcast_path}" \
             --repository "${GITHUB_REPOSITORY}" \
             --marketing-version "${MARKETING_VERSION}" \

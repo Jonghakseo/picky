@@ -1,5 +1,7 @@
 import importlib.util
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -11,6 +13,7 @@ sys.modules[spec.name] = release_version_policy
 spec.loader.exec_module(release_version_policy)
 
 ReleaseVersionPolicyError = release_version_policy.ReleaseVersionPolicyError
+TagRecord = release_version_policy.TagRecord
 
 
 class ReleaseVersionPolicyTests(unittest.TestCase):
@@ -108,6 +111,67 @@ class ReleaseVersionPolicyTests(unittest.TestCase):
             with self.subTest(version=version):
                 with self.assertRaises(ReleaseVersionPolicyError):
                     release_version_policy.validate_marketing_version(version)
+
+
+class ReleaseLineageTests(unittest.TestCase):
+    def check(self, tag, *records):
+        release_version_policy.check_release_lineage(tag=tag, records=list(records))
+
+    def test_stable_must_point_at_the_final_beta_commit(self):
+        beta1 = TagRecord("0.9.5-beta.1", "aaa111", 100)
+        beta2 = TagRecord("0.9.5-beta.2", "bbb222", 105)
+        beta10 = TagRecord("0.9.5-beta.10", "ccc333", 110)
+
+        self.check("0.9.5", beta1, beta2, beta10, TagRecord("0.9.5", "ccc333", 110))
+        with self.assertRaisesRegex(ReleaseVersionPolicyError, r"0\.9\.5-beta\.10"):
+            self.check("0.9.5", beta1, beta2, beta10, TagRecord("0.9.5", "ddd444", 120))
+
+    def test_stable_without_any_beta_is_allowed(self):
+        self.check("0.9.5", TagRecord("0.9.4", "aaa111", 100), TagRecord("0.9.5", "bbb222", 101))
+
+    def test_build_number_must_exceed_older_releases_on_other_commits(self):
+        older = TagRecord("0.9.4", "aaa111", 100)
+
+        self.check("0.9.5-beta.1", older, TagRecord("0.9.5-beta.1", "bbb222", 101))
+        for build_number in (100, 99):
+            with self.subTest(build_number=build_number):
+                with self.assertRaisesRegex(ReleaseVersionPolicyError, "not greater"):
+                    self.check("0.9.5-beta.1", older, TagRecord("0.9.5-beta.1", "bbb222", build_number))
+
+    def test_rerunning_an_old_release_ignores_newer_tags(self):
+        self.check(
+            "0.9.5-beta.1",
+            TagRecord("0.9.5-beta.1", "aaa111", 100),
+            TagRecord("0.9.5-beta.2", "bbb222", 120),
+            TagRecord("0.9.6", "ccc333", 150),
+        )
+
+    def test_alpha_and_legacy_tags_are_not_ordered(self):
+        self.check("0.9.5-alpha.1", TagRecord("0.9.5-alpha.1", "aaa111", 1))
+        self.check("0.9.5-stable", TagRecord("0.9.5-stable", "aaa111", 1))
+
+    def test_git_repository_tags_feed_the_same_rules(self):
+        with tempfile.TemporaryDirectory() as repo:
+            def git(*args):
+                subprocess.run(
+                    ["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.com",
+                     "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", *args],
+                    check=True, capture_output=True,
+                )
+
+            git("init", "-q")
+            git("commit", "-q", "--allow-empty", "-m", "one")
+            git("tag", "0.9.4")
+            git("commit", "-q", "--allow-empty", "-m", "two")
+            git("tag", "-a", "0.9.5-beta.1", "-m", "beta")
+            git("commit", "-q", "--allow-empty", "-m", "three")
+            git("tag", "0.9.5")
+
+            records = {record.tag: record for record in release_version_policy.collect_tag_records(repo)}
+            self.assertEqual(records["0.9.5-beta.1"].build_number, 2)
+            self.assertEqual(records["0.9.5"].build_number, 3)
+            self.assertEqual(release_version_policy.main(["check-lineage", "--tag", "0.9.5-beta.1", "--repo", repo]), 0)
+            self.assertEqual(release_version_policy.main(["check-lineage", "--tag", "0.9.5", "--repo", repo]), 2)
 
 
 if __name__ == "__main__":

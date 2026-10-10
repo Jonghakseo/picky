@@ -174,6 +174,10 @@ enum PickyInteractionEvent: Equatable, Codable {
     case textContextCaptured(inputID: UUID, context: PickyContextPacket)
     case textSubmissionAccepted(contextID: String, inputID: UUID)
     case textSubmissionFailed(message: String, inputID: UUID)
+    /// Quick Input sent straight to an armed Pickle. It bypasses the text
+    /// submission lifecycle, but it still takes the floor from any reply that
+    /// is being spoken, exactly like a PTT barge-in.
+    case pickleInputSubmitted(sessionID: String)
 
     case voiceContextCaptured(inputID: UUID, transcript: String, context: PickyContextPacket, targetSessionID: String?)
     /// External picky CLI submission whose context capture has finished on the host
@@ -240,7 +244,7 @@ enum PickyInteractionEvent: Equatable, Codable {
     private enum CaseKey: String, CodingKey {
         case appStarted, permissionsChanged, cursorPreferenceChanged
         case voicePressed, voiceStartFailed, voiceReleased, transcriptFinal, transcriptFailed
-        case textSubmitted, textContextCaptured, textSubmissionAccepted, textSubmissionFailed
+        case textSubmitted, textContextCaptured, textSubmissionAccepted, textSubmissionFailed, pickleInputSubmitted
         case voiceContextCaptured, externalContextCaptured, remoteContextCaptured, agentSubmissionAccepted, quickReply, narrationChunk
         case visualNarrationSegmentPrepared, visualNarrationSegmentSentence, visualNarrationSegmentCommitted
         case streamedQuickReplyFinal, passiveAgentSummary, pickleCompleted, mainTurnSettled, mainAgentSessionReset, sessionTerminated
@@ -275,6 +279,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .voicePressed:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .voicePressed(targetSessionID: try payload.decodeIfPresent(String.self, forKey: .targetSessionID))
+        case .pickleInputSubmitted:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .pickleInputSubmitted(sessionID: try payload.decode(String.self, forKey: .sessionID))
         case .voiceStartFailed:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .voiceStartFailed(message: try payload.decode(String.self, forKey: .message), inputID: try payload.decode(UUID.self, forKey: .inputID))
@@ -474,6 +481,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .voicePressed(let targetSessionID):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .voicePressed)
             try payload.encodeIfPresent(targetSessionID, forKey: .targetSessionID)
+        case .pickleInputSubmitted(let sessionID):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .pickleInputSubmitted)
+            try payload.encode(sessionID, forKey: .sessionID)
         case .voiceStartFailed(let message, let inputID):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .voiceStartFailed)
             try payload.encode(message, forKey: .message); try payload.encode(inputID, forKey: .inputID)

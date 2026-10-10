@@ -852,6 +852,42 @@ struct PickyInteractionReducerTests {
         #expect(interrupted.effects.contains(.stopSpeech(reason: .superseded, speechID: speechA)))
     }
 
+    /// Regression: a Quick Input follow-up sent to an armed Pickle skipped the
+    /// text submission lifecycle, so the reply being read aloud kept playing
+    /// its remaining sentences one by one over the new instruction.
+    @Test func pickleInputSubmissionInterruptsSpokenReplyAndDropsQueuedSentences() {
+        var state = PickyInteractionState()
+        state.contextOwnership["pickle-context"] = .quickInputText(inputID: inputA)
+        state = reduce(
+            state,
+            .narrationChunk(contextID: "pickle-context", text: "첫 문장.", originSource: .textFollowUp, replyKind: .main, sessionID: "pickle-1", shouldSpeak: true, shouldSpeakFinalReply: false),
+            id: timerA,
+            correlation: .init(contextID: "pickle-context", speechID: speechA, source: .agent)
+        ).state
+        state = reduce(
+            state,
+            .narrationChunk(contextID: "pickle-context", text: "둘째 문장.", originSource: .textFollowUp, replyKind: .main, sessionID: "pickle-1", shouldSpeak: true, shouldSpeakFinalReply: false),
+            id: timerB,
+            correlation: .init(contextID: "pickle-context", speechID: inputB, source: .agent)
+        ).state
+        #expect(state.queuedSpeechReplies.map(\.text) == ["둘째 문장."])
+
+        let interrupted = reduce(
+            state,
+            .pickleInputSubmitted(sessionID: "pickle-1"),
+            id: UUID(),
+            correlation: .init(sessionID: "pickle-1", source: .quickInput)
+        )
+        #expect(interrupted.state.output == .idle)
+        #expect(interrupted.state.queuedSpeechReplies.isEmpty)
+        #expect(interrupted.effects.contains(.stopSpeech(reason: .userInterrupted, speechID: speechA)))
+
+        // The stopped utterance's late completion must not start the next sentence.
+        let lateCompletion = reduce(interrupted.state, .speechFinished(speechID: speechA), id: UUID(), offset: 5)
+        #expect(lateCompletion.state.output == .idle)
+        #expect(!lateCompletion.effects.contains { if case .speak = $0 { return true } else { return false } })
+    }
+
     @Test func quickReplyImmediateSpeechFailureKeepsDisplayUntilMatchingTimerFires() {
         var state = PickyInteractionState()
         state.contextOwnership["voice-context"] = .voice(inputID: inputA)

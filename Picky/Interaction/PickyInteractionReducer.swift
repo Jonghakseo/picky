@@ -127,6 +127,8 @@ struct PickyInteractionReducing {
             applyTextSubmissionAccepted(inputID: inputID)
         case .textSubmissionFailed(let message, let inputID):
             applyTextSubmissionFailed(message: message, inputID: inputID)
+        case .pickleInputSubmitted:
+            applyPickleInputSubmitted()
         case .voiceContextCaptured(let inputID, let transcript, let context, let targetSessionID):
             applyVoiceContextCaptured(inputID: inputID, transcript: transcript, context: context, targetSessionID: targetSessionID)
         case .externalContextCaptured(let inputID, let text, let context):
@@ -339,6 +341,23 @@ struct PickyInteractionReducing {
         }
         effects.append(.captureTextContext(inputID: inputID, text: text))
         record(.stateChanged, "Text input submitted")
+    }
+
+    /// The Pickle owns its reply from here, so the cursor does not wait for it.
+    /// What must end is the reply still being read aloud: without this its
+    /// queued sentences keep playing one by one over the new instruction.
+    private mutating func applyPickleInputSubmitted() {
+        clearAgentAnnotationsForUserInput()
+        state.queuedSpeechReplies.removeAll()
+        state.streamedNarrationContextIDs.removeAll()
+        guard case .speaking(_, let speechID, _, _, _, _) = state.output else {
+            record(.accepted, "Pickle input submitted; no spoken reply to interrupt")
+            return
+        }
+        state.output = .idle
+        state = state.removingOverlayReason(.speakingResponse)
+        effects.append(.stopSpeech(reason: .userInterrupted, speechID: speechID))
+        record(.stateChanged, "Pickle input interrupted spoken reply")
     }
 
     private mutating func applyTextContextCaptured(inputID: UUID, context: PickyContextPacket) {

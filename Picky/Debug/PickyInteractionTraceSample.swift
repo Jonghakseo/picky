@@ -102,7 +102,7 @@ enum PickyInteractionTraceMapper {
             return lifecycleFacts(event)
         case .voicePressed, .voiceStartFailed, .voiceReleased, .transcriptFinal, .transcriptFailed,
              .textSubmitted, .textContextCaptured, .textSubmissionAccepted, .textSubmissionFailed,
-             .voiceContextCaptured, .externalContextCaptured, .remoteContextCaptured,
+             .pickleInputSubmitted, .voiceContextCaptured, .externalContextCaptured, .remoteContextCaptured,
              .agentSubmissionAccepted:
             return inputFacts(event)
         case .quickReply, .narrationChunk, .streamedQuickReplyFinal, .passiveAgentSummary,
@@ -158,6 +158,8 @@ enum PickyInteractionTraceMapper {
             )
         case .textSubmissionFailed(_, let inputID):
             return .init(name: "textSubmissionFailed", inputID: inputID, modality: .text, outcome: "failed")
+        case .pickleInputSubmitted(let sessionID):
+            return .init(name: "pickleInputSubmitted", sessionID: sessionID, modality: .text)
         case .voiceContextCaptured(let inputID, let transcript, let context, let targetSessionID):
             return .init(
                 name: "voiceContextCaptured",

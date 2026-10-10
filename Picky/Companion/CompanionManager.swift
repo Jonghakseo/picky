@@ -1533,6 +1533,11 @@ final class CompanionManager: ObservableObject {
         )
         activeArmedPickleDispatch = dispatch
         activeMainTurnFollowUpSessionID = targetSessionID
+        // Typing a new instruction takes the floor, as it does for the main agent.
+        interactionCoordinator.accept(
+            .pickleInputSubmitted(sessionID: targetSessionID),
+            correlation: PickyInteractionCorrelation(sessionID: targetSessionID, source: .quickInput)
+        )
         do {
             guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
                 transcript: text,

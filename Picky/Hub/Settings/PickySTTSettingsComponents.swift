@@ -329,7 +329,7 @@ struct PickySTTKeySection: View {
                     .textFieldStyle(.plain)
                     .font(PickyHUDTypography.supportingMonospacedMedium)
                     .foregroundColor(DS.Colors.textSecondary)
-                    .padding(.horizontal, 9)
+                    .padding(.horizontal, 9) // design-token-exception: matches the existing voice settings field inset
                     .padding(.vertical, DS.Spacing.space2)
                     .background(
                         RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)
@@ -442,7 +442,7 @@ struct PickySTTVocabularySection: View {
                 .textFieldStyle(.plain)
                 .font(PickyHUDTypography.supportingMedium)
                 .foregroundColor(DS.Colors.textSecondary)
-                .padding(.horizontal, 9)
+                .padding(.horizontal, 9) // design-token-exception: matches the existing voice settings field inset
                 .padding(.vertical, DS.Spacing.space2)
                 .background(
                     RoundedRectangle(cornerRadius: DS.CornerRadius.medium, style: .continuous)

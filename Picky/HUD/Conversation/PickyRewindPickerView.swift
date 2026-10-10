@@ -104,7 +104,7 @@ struct PickyRewindPickerView: View {
         } label: {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 13, weight: .semibold))
+                    .pickyFont(size: 13, weight: .semibold)
                     .foregroundColor(isSelected ? DS.Colors.accentText : DS.Colors.textTertiary)
                     .padding(.top, 2)
 

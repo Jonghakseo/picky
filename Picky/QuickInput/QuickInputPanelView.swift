@@ -248,6 +248,8 @@ struct QuickInputPanelView: View {
         }
         .buttonStyle(.plain)
         .disabled(isSendDisabled)
+        .hoverAffordance(brightness: isSendDisabled ? 0 : 0.06)
+        .help(L10n.t("hud.composer.submit.send"))
         .accessibilityLabel(L10n.t("hud.composer.submit.send"))
         .accessibilityValue(viewModel.isSending ? L10n.t("common.sending") : "")
     }
@@ -262,6 +264,8 @@ struct QuickInputPanelView: View {
         }
         .buttonStyle(.plain)
         .keyboardShortcut(.escape, modifiers: [])
+        .hoverAffordance()
+        .help(L10n.t("common.close"))
         .accessibilityLabel(L10n.t("common.close"))
     }
 

@@ -533,6 +533,7 @@ struct PickyConversationComposerView: View {
                 }
                 .buttonStyle(.plain)
                 .help(L10n.t("hud.composer.screenContext.cancel"))
+                .accessibilityLabel(L10n.t("hud.composer.screenContext.cancel"))
             }
             .foregroundColor(DS.Colors.accentText)
             .padding(.horizontal, 8)

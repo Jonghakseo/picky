@@ -109,6 +109,13 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
 
         addSubview(markdownView)
 
+        // The hover button is hidden (and so absent from the accessibility
+        // tree) until the pointer enters. Expose "open as report" as a custom
+        // action on the bubble so VoiceOver and Voice Control can reach it
+        // without hovering. `configure` keeps the action list in sync.
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+
         hoverButton.isBordered = false
         hoverButton.bezelStyle = .regularSquare
         let symbolConfig = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
@@ -180,10 +187,24 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         self.onOpenAsReport = onOpenAsReport
 
         hoverButton.toolTip = L10n.t("hud.message.openReport.help")
+        updateAccessibilityActions()
 
         needsLayout = true
         needsDisplay = true
         invalidateIntrinsicContentSize()
+    }
+
+    private func updateAccessibilityActions() {
+        guard onOpenAsReport != nil else {
+            setAccessibilityCustomActions([])
+            return
+        }
+        let action = NSAccessibilityCustomAction(name: L10n.t("hud.extensionMessage.openAsReport")) { [weak self] in
+            guard let self, self.onOpenAsReport != nil else { return false }
+            self.openAsReportClicked()
+            return true
+        }
+        setAccessibilityCustomActions([action])
     }
 
     override var intrinsicContentSize: NSSize {

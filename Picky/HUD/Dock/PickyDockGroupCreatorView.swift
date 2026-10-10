@@ -125,7 +125,7 @@ struct PickyDockGroupCreatorView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 13, weight: .medium))
+                    .pickyFont(size: 13, weight: .medium)
                     .foregroundStyle(isSelected ? DS.Colors.accentText : DS.Colors.textTertiary)
                     .frame(width: 16)
                 VStack(alignment: .leading, spacing: 0) {

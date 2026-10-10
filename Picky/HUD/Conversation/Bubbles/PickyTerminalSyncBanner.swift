@@ -49,6 +49,7 @@ struct PickyTerminalSyncBanner: View {
             }
             .buttonStyle(.plain)
             .help(L10n.t("common.dismiss"))
+            .accessibilityLabel(L10n.t("common.dismiss"))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

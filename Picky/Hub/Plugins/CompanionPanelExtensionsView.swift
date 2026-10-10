@@ -863,6 +863,7 @@ struct CompanionPanelExtensionsView: View {
         }
         .buttonStyle(.plain)
         .help(description)
+        .accessibilityLabel(description)
         .pickyInstantPopover(
             isPresented: Binding(
                 get: { curatedInfoPopoverPluginID == row.plugin.id },

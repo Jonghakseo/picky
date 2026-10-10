@@ -36,6 +36,15 @@ export function appShellCsp(host: string): string {
 /** Preview documents are rendered in a sandboxed iframe and get their own policy. */
 export const PREVIEW_DOCUMENT_CSP = "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:";
 
+/**
+ * PDFs render in the browser's own viewer, which a CSP `sandbox` directive
+ * disables (Chrome refuses to show a PDF in a sandboxed frame), and
+ * `object-src 'none'` has blocked viewers too. This keeps to directives that do
+ * not touch the viewer: no scripts or navigation hooks from the document, and
+ * only this origin may frame it. Not verified on iOS Safari.
+ */
+export const PREVIEW_PDF_CSP = "script-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+
 const ERROR_STATUS: Record<RemoteErrorCode, number> = {
   invalid: 400,
   unauthorized: 401,

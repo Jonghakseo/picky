@@ -19,6 +19,7 @@ import { UploadStore } from "./uploads.js";
 import { CommandDeduplicator } from "./command-dedupe.js";
 import { buildRoomList, MAIN_ROOM_TITLE, type RoomListResult } from "./rooms.js";
 import { errorMessage, logGateway } from "./log.js";
+import { dataPath, pruneOlderThan } from "./storage.js";
 import { MAIN_ROOM_ID } from "../remote/constants.js";
 import type { PickyAgentSession } from "../protocol.js";
 import type { RemoteMacState, RemoteRoom, RemoteServerMessage } from "../remote/protocol.js";
@@ -30,6 +31,10 @@ import type { PushFetch } from "./push/sender.js";
 
 export const ROOM_REBUILD_DEBOUNCE_MS = 150;
 const SESSION_WAIT_POLL_MS = 100;
+/** How often expired uploads and stale `tmp/` files are swept while the gateway runs. */
+export const MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
+/** A dictation recording lives seconds; anything this old was orphaned by a crash. */
+export const TEMPORARY_FILE_MAX_AGE_MS = 60 * 60 * 1000;
 
 export interface ClientHandle {
   readonly deviceId: string;
@@ -64,6 +69,7 @@ export class GatewayCore {
   readonly dedupe = new CommandDeduplicator<unknown>();
 
   private rebuildTimer?: NodeJS.Timeout;
+  private maintenanceTimer?: NodeJS.Timeout;
   private roomsResult: RoomListResult = { rooms: [], groups: [], folders: { pinned: [], recent: [] } };
   private lastRoomStates = new Map<string, RoomPushState>();
   private readonly throttle = new PushThrottle();
@@ -112,11 +118,23 @@ export class GatewayCore {
   async start(): Promise<void> {
     await this.devices.load();
     await this.push.init();
-    await this.uploads.pruneExpired().catch(() => 0);
+    await this.runMaintenance();
+    if (!this.maintenanceTimer) {
+      this.maintenanceTimer = setInterval(() => void this.runMaintenance(), MAINTENANCE_INTERVAL_MS);
+      this.maintenanceTimer.unref();
+    }
+  }
+
+  /** Sweeps expired uploads and orphaned `tmp/` files. Never throws: housekeeping must not take the gateway down. */
+  async runMaintenance(now = Date.now()): Promise<void> {
+    await this.uploads.pruneExpired(now).catch(() => 0);
+    await pruneOlderThan(dataPath(this.config.dataDir, "tmp"), TEMPORARY_FILE_MAX_AGE_MS, now).catch(() => 0);
   }
 
   stop(): void {
     if (this.rebuildTimer) clearTimeout(this.rebuildTimer);
+    if (this.maintenanceTimer) clearInterval(this.maintenanceTimer);
+    this.maintenanceTimer = undefined;
     this.daemons.stop();
     for (const client of this.clients) client.close(1001, "gateway shutting down");
     this.clients.clear();

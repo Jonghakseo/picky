@@ -11,6 +11,7 @@ import type { HubRequest } from "../remote/hub-protocol.js";
 import type { RemoteCommand, RemoteError, RemoteErrorCode, RemoteQuery } from "../remote/protocol.js";
 import { planCommand, roomIdForCommand } from "./command-router.js";
 import type { DaemonLink } from "./daemon-link.js";
+import { summarizeShellCommand } from "./shell-audit.js";
 import { bashCommandIn, submissionTextWithAttachments } from "./submission-text.js";
 
 /** How long a new Pickle has to show up in the projection before its first message. */
@@ -121,7 +122,7 @@ function recordCommandAudit(context: CommandContext, deviceId: string, command: 
     type: command.type,
     ...(roomIdForCommand(command) ? { sessionId: roomIdForCommand(command) } : {}),
     ...(text !== undefined ? { textChars: text.length } : {}),
-    ...(shellCommand ? { shellCommand } : {}),
+    ...(shellCommand ? summarizeShellCommand(shellCommand) : {}),
   });
 }
 

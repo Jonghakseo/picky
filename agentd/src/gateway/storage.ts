@@ -8,7 +8,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { chmod, mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export const DIRECTORY_MODE = 0o700;
@@ -50,6 +50,20 @@ export async function writeFileAtomic(path: string, data: string | Uint8Array): 
 
 export async function removeFile(path: string): Promise<void> {
   await rm(path, { force: true });
+}
+
+/** Deletes direct children of `directory` last modified more than `maxAgeMs` ago. Returns how many went. */
+export async function pruneOlderThan(directory: string, maxAgeMs: number, now = Date.now()): Promise<number> {
+  const entries = await readdir(directory).catch(() => []);
+  let removed = 0;
+  for (const entry of entries) {
+    const path = join(directory, entry);
+    const info = await stat(path).catch(() => undefined);
+    if (!info || now - info.mtimeMs < maxAgeMs) continue;
+    await rm(path, { recursive: true, force: true }).catch(() => {});
+    removed += 1;
+  }
+  return removed;
 }
 
 /** URL-safe id used for devices, uploads and request correlation. */

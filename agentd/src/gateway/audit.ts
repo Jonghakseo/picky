@@ -2,9 +2,10 @@
  * Append-only audit log (docs/remote-pwa-implementation.md 2.3).
  *
  * One JSON line per security-relevant action. Message text, recordings and
- * transcripts are never written; the one deliberate exception is the full
- * command line of a `!` shell message, because a phone that runs shell commands
- * on the Mac has to leave a trace of what it ran.
+ * transcripts are never written; the one deliberate exception is a `!` shell
+ * message, because a phone that runs shell commands on the Mac has to leave a
+ * trace of what it ran. That trace is its length plus a masked opening
+ * (`shell-audit.ts`), never the full line.
  */
 import { appendFile, rename, stat, unlink } from "node:fs/promises";
 import { dataPath, ensureDirectory, FILE_MODE } from "./storage.js";
@@ -17,7 +18,7 @@ export type AuditEvent =
   | { action: "pair.success"; ip: string; deviceId: string; deviceName: string }
   | { action: "localOpen"; ip: string; ok: boolean; deviceId?: string; deviceName?: string }
   | { action: "device.revoke"; deviceId: string; by: "hub" | "device" }
-  | { action: "command"; deviceId: string; type: string; sessionId?: string; textChars?: number; shellCommand?: string }
+  | { action: "command"; deviceId: string; type: string; sessionId?: string; textChars?: number; shellCommand?: string; shellCommandChars?: number }
   | { action: "file.read"; deviceId: string; sessionId: string; path: string; ok: boolean; reason?: string }
   | { action: "upload"; deviceId: string; uploadId: string; bytes: number; mime: string }
   | { action: "dictation"; deviceId: string; bytes: number; ok: boolean; reason?: string }

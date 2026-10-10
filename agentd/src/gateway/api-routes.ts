@@ -18,7 +18,7 @@ import {
   type RemoteDictationResponse,
   type RemoteMeResponse,
 } from "../remote/protocol.js";
-import { PREVIEW_DOCUMENT_CSP, remoteError, sendBytes, sendError, sendJson } from "./http/responses.js";
+import { PREVIEW_DOCUMENT_CSP, PREVIEW_PDF_CSP, remoteError, sendBytes, sendError, sendJson } from "./http/responses.js";
 import { checkSameOrigin, deviceCookie, deviceTokenOf, clearedDeviceCookie, isLocalHost, isLoopbackPeer, requestHostOf, type RequestFacts } from "./http/request-context.js";
 import { browserNameOf } from "./local-open.js";
 import { describeFile, PREVIEW_CONTENT_TYPES, resolveReferencedFile, sniffImageMime, MAX_PREVIEW_IMAGE_BYTES } from "./file-service.js";
@@ -270,7 +270,9 @@ export class ApiRouter {
     // stops a report the agent wrote from calling back into the gateway.
     const headers = description.kind === "html" || description.kind === "svg"
       ? { "Content-Security-Policy": PREVIEW_DOCUMENT_CSP }
-      : {};
+      : description.kind === "pdf"
+        ? { "Content-Security-Policy": PREVIEW_PDF_CSP }
+        : {};
     sendBytes(response, 200, bytes, contentType, headers);
   }
 

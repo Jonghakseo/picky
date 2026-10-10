@@ -94,6 +94,20 @@ describe("main Task commands from a paired device", () => {
   });
 });
 
+describe("the audit entry for a `!` shell message", () => {
+  it("carries the command's length and a masked opening, never the full line with its secret", async () => {
+    const { context, audit } = harness();
+    const text = `!curl -H 'Authorization: Bearer tok_live_9f8e7d6c5b4a' https://api.example.com/${"x".repeat(100)}`;
+    await executeCommand(context, DEVICE, { type: "session.send", sessionId: "s1", text, kind: "followUp" }).catch(() => {});
+    expect(audit).toHaveLength(1);
+    const entry = audit[0] as Extract<AuditEvent, { action: "command" }>;
+    expect(entry.shellCommandChars).toBe(text.length - 1);
+    expect(entry.shellCommand).toContain("curl");
+    expect(JSON.stringify(entry)).not.toContain("tok_live_9f8e7d6c5b4a");
+    expect(entry.shellCommand?.length).toBeLessThan(100);
+  });
+});
+
 describe("validation before anything reaches the daemon", () => {
   it("accepts the documented payloads and refuses everything else", () => {
     const valid: RemoteCommand[] = [

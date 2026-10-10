@@ -38,7 +38,7 @@ Node process in the agentd package. Entry `agentd/src/gateway/main.ts`, built to
 
 Readiness: print `picky-gateway listening on 127.0.0.1:<port>` once the server listens. SIGINT/SIGTERM close sockets and exit 0.
 
-Data in `<root>/Remote/` (directory mode 0700, files 0600): `devices.json` (devices with token hashes and push subscriptions), `vapid.json`, `audit.jsonl` (rotated at 5 MB, 3 kept), `uploads/` (deleted after 7 days), `tmp/` (dictation recordings, deleted after use).
+Data in `<root>/Remote/` (directory mode 0700, files 0600): `devices.json` (devices with token hashes and push subscriptions), `vapid.json`, `audit.jsonl` (rotated at 5 MB, 3 kept), `uploads/` (deleted after 7 days), `tmp/` (dictation recordings, deleted after use; leftovers older than 1 hour are swept). Uploads and `tmp/` are swept at start and then every hour.
 
 ### 2.2 HTTP routes
 
@@ -71,7 +71,7 @@ Data in `<root>/Remote/` (directory mode 0700, files 0600): `devices.json` (devi
 - **CSP on the app shell:** `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self' wss://<host> ws://<host>; worker-src 'self'; manifest-src 'self'; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'none'; form-action 'self'`.
 - **Mac files** (`/api/files/*`, plan "파일 미리보기"): the requested path is resolved like the HUD (`Picky/HUD/Conversation/Bubbles/PickyMarkdownLinkHandler.swift`: relative to the session `cwd`, `~` is home, standardized), then `realpath`. It must equal the realpath of a path the session references: markdown link targets in messages, string `path`/`file_path`/`filePath`/`paths` arguments of tool calls, artifact paths, changed file paths (relative to `cwd`), and tool image paths. Images are sniffed by magic bytes and capped at 20 MB. HTML and SVG get `Content-Security-Policy: sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:` and are shown in a sandboxed iframe. Text previews return the first 1 MB.
 - **Limits.** JSON bodies 1 MB, uploads 20 MB, dictation 15 MB, WebSocket inbound frames 1 MB (`REMOTE_LIMITS`).
-- **Audit log.** One JSON line per pairing attempt, revocation, command (type, session, text length; the full command line for `!` shell messages), file access, upload and push subscription. Message text, recordings and transcripts are not logged.
+- **Audit log.** One JSON line per pairing attempt, revocation, command (type, session, text length; for `!` shell messages, the command length and its first 80 characters with tokens, passwords and `Bearer` credentials masked), file access, upload and push subscription. Message text, recordings and transcripts are not logged.
 
 ### 2.4 Request scheme
 

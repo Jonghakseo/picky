@@ -2250,6 +2250,36 @@ describe("AgentdServer", () => {
     cli.ws.close();
   });
 
+  it("routes CLI Pickle notification changes to the app owner and rejects unconfirmed results", async () => {
+    const app = await connectWithHello();
+    app.ws.send(JSON.stringify({ id: "cmd-register-cli-notify", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleBridge"] }));
+    await waitForRegisteredCapability("pickleBridge");
+    const cli = await connectWithHello();
+    const session = makeSession({ id: "pickle-notify", notifyMainOnCompletion: false, notifyMacOSOnCompletion: false });
+
+    cli.ws.send(JSON.stringify({ id: "cmd-cli-notify-empty", protocolVersion: PROTOCOL_VERSION, type: "setPickleNotifications", sessionId: "pickle-notify" }));
+    await expect(waitForEvent(cli.ws, "error")).resolves.toMatchObject({ commandId: "cmd-cli-notify-empty" });
+
+    cli.ws.send(JSON.stringify({ id: "cmd-cli-notify", protocolVersion: PROTOCOL_VERSION, type: "setPickleNotifications", caller: "mainAgent", sessionId: "pickle-notify", notifyMacOSOnCompletion: true }));
+    const request = await waitForEvent(app.ws, "pickleBridgeRequested");
+    expect(request).toMatchObject({ operation: "setNotifications", sessionId: "pickle-notify", notifyMacOSOnCompletion: true });
+    expect(request).not.toHaveProperty("notifyMainOnCompletion");
+    if (request.type !== "pickleBridgeRequested") throw new Error("expected notification bridge request");
+    const update = waitForEvent(cli.ws, "pickleSessionUpdated");
+    app.ws.send(JSON.stringify({ id: "cmd-complete-cli-notify", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: request.requestId, session: { ...session, notifyMacOSOnCompletion: true }, delivered: true }));
+    await expect(update).resolves.toMatchObject({ commandId: "cmd-cli-notify", session: { id: "pickle-notify", notifyMainOnCompletion: false, notifyMacOSOnCompletion: true } });
+
+    cli.ws.send(JSON.stringify({ id: "cmd-cli-notify-stale", protocolVersion: PROTOCOL_VERSION, type: "setPickleNotifications", sessionId: "pickle-notify", notifyMainOnCompletion: true }));
+    const staleRequest = await waitForEvent(app.ws, "pickleBridgeRequested");
+    if (staleRequest.type !== "pickleBridgeRequested") throw new Error("expected notification bridge request");
+    const rejection = waitForEvent(cli.ws, "error");
+    app.ws.send(JSON.stringify({ id: "cmd-complete-cli-notify-stale", protocolVersion: PROTOCOL_VERSION, type: "completePickleBridgeRequest", requestId: staleRequest.requestId, session, delivered: true }));
+    await expect(rejection).resolves.toMatchObject({ commandId: "cmd-cli-notify-stale", message: expect.stringContaining("do not match") });
+
+    app.ws.close();
+    cli.ws.close();
+  });
+
   it("routes main-agent CLI abort despite a retired disabled setting", async () => {
     await supervisor.setDisabledBuiltinTools(["picky_abort_pickle"]);
     const app = await connectWithHello();

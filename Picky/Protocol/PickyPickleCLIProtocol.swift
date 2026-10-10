@@ -65,6 +65,9 @@ enum PickyPickleBridgeOperation: String, Decodable, Equatable {
     case followUp
     case abort
     case setArchived
+    /// `picky pickle-notify`: change a Pickle's completion channels through
+    /// the same owner-routed commands the HUD toggles use.
+    case setNotifications
     case delete
     case manageGroups
     case notifyMainOfPickleCompletion

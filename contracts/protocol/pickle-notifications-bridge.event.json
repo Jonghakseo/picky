@@ -1,0 +1,11 @@
+{
+  "id": "event-notifications-bridge",
+  "protocolVersion": "2026-08-25",
+  "timestamp": "2026-10-10T00:00:00.000Z",
+  "type": "pickleBridgeRequested",
+  "requestId": "bridge-notifications",
+  "operation": "setNotifications",
+  "sessionId": "session-001",
+  "notifyMainOnCompletion": false,
+  "notifyMacOSOnCompletion": true
+}

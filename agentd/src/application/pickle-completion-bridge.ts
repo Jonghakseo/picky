@@ -23,6 +23,7 @@ export type AppPickleBridgeRequest =
   | { operation: "steer" | "followUp"; sessionId: string; text: string }
   | { operation: "abort"; sessionId: string }
   | { operation: "setArchived"; sessionId: string; archived: boolean; archiveMode?: "continue" | "stopThenArchive" }
+  | { operation: "setNotifications"; sessionId: string; notifyMainOnCompletion?: boolean; notifyMacOSOnCompletion?: boolean }
   | { operation: "delete"; sessionId: string }
   | { operation: "manageGroups"; groupAction: "list" | "create" | "addMembers" | "removeMembers" | "removeGroup" | "archiveGroup"; groupId?: string; name?: string; sessionIds?: string[]; archiveMode?: "continue" | "stopThenArchive" }
   | ({
@@ -129,6 +130,20 @@ function cliBridgeResultError(request: AppPickleBridgeRequest, result: AppPickle
   if (request.operation === "resolveCaller"
     && (result.delivered !== true || (request.callerContext.sessionId !== "picky" && result.session?.id !== request.callerContext.sessionId) || !result.groups)) {
     return "Caller identity could not be confirmed";
+  }
+  if (request.operation === "setNotifications") return notificationResultError(request, result.session);
+  return undefined;
+}
+
+function notificationResultError(
+  request: Extract<AppPickleBridgeRequest, { operation: "setNotifications" }>,
+  session: PickyAgentSession | undefined,
+): string | undefined {
+  if (session?.id !== request.sessionId) return "Owner operation returned a different session";
+  const mismatched = (requested: boolean | undefined, saved: boolean | undefined) => requested !== undefined && (saved === true) !== requested;
+  if (mismatched(request.notifyMainOnCompletion, session.notifyMainOnCompletion)
+    || mismatched(request.notifyMacOSOnCompletion, session.notifyMacOSOnCompletion)) {
+    return "Saved notification settings do not match the requested change";
   }
   return undefined;
 }

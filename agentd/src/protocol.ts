@@ -741,6 +741,9 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("controlPickle"), pickleAction: z.enum(["steer", "followUp", "abort"]), sessionId: z.string().min(1), text: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("setPickleArchived"), archiveMode: z.enum(["continue", "stopThenArchive"]).optional(), sessionId: z.string().min(1), archived: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("deletePickle"), sessionId: z.string().min(1) }),
+  // CLI-originated per-Pickle completion channels. Omitted channels stay unchanged;
+  // the daemon rejects a command that names neither.
+  CommandBaseSchema.extend({ type: z.literal("setPickleNotifications"), sessionId: z.string().min(1), notifyMainOnCompletion: z.boolean().optional(), notifyMacOSOnCompletion: z.boolean().optional() }),
   // Replies with `pickleSessionUpdated` once the primary-hosted session reaches a terminal status.
   CommandBaseSchema.extend({ type: z.literal("awaitPickleSessionTerminal"), sessionId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("listDockGroups") }),
@@ -1042,7 +1045,7 @@ export const EventEnvelopeVariantSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({
     type: z.literal("pickleBridgeRequested"),
     requestId: z.string().min(1),
-    operation: z.enum(["listSessions", "resolveCaller", "rename", "steer", "followUp", "abort", "setArchived", "delete", "manageGroups", "notifyMainOfPickleCompletion"]),
+    operation: z.enum(["listSessions", "resolveCaller", "rename", "steer", "followUp", "abort", "setArchived", "setNotifications", "delete", "manageGroups", "notifyMainOfPickleCompletion"]),
     callerContext: PickyCliCallerContextSchema.optional(),
     sessionId: z.string().optional(),
     text: z.string().optional(),

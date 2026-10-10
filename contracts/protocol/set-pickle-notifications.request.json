@@ -1,0 +1,7 @@
+{
+  "id": "cmd-set-pickle-notifications-001",
+  "protocolVersion": "2026-08-25",
+  "type": "setPickleNotifications",
+  "sessionId": "pickle-1",
+  "notifyMacOSOnCompletion": true
+}

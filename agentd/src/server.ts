@@ -615,6 +615,21 @@ export class AgentdServer {
         if (!result.session) throw new Error(`No Pickle session returned for setArchived: ${cmd.sessionId}`);
         this.send(ws, { type: "pickleSessionUpdated", commandId: cmd.id, session: protocolSession(result.session) });
       },
+      setPickleNotifications: async (cmd) => {
+        if (cmd.notifyMainOnCompletion === undefined && cmd.notifyMacOSOnCompletion === undefined) {
+          throw new Error("setPickleNotifications requires notifyMainOnCompletion or notifyMacOSOnCompletion");
+        }
+        // The app routes each channel to the session's owning daemon, which may
+        // need to restart a retired child, so allow more than the default budget.
+        const result = await this.requestPickleBridgeFromApp({
+          operation: "setNotifications",
+          sessionId: cmd.sessionId,
+          ...(cmd.notifyMainOnCompletion === undefined ? {} : { notifyMainOnCompletion: cmd.notifyMainOnCompletion }),
+          ...(cmd.notifyMacOSOnCompletion === undefined ? {} : { notifyMacOSOnCompletion: cmd.notifyMacOSOnCompletion }),
+        }, 15_000);
+        if (!result.session) throw new Error(`No Pickle session returned for setNotifications: ${cmd.sessionId}`);
+        this.send(ws, { type: "pickleSessionUpdated", commandId: cmd.id, session: protocolSession(result.session) });
+      },
       deletePickle: async (cmd) => {
         const result = await this.requestPickleBridgeFromApp({ operation: "delete", sessionId: cmd.sessionId });
         this.send(ws, { type: "pickleSessionsSnapshot", commandId: cmd.id, sessions: (result.sessions ?? []).map(protocolSession) });
@@ -1247,6 +1262,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, action: command.pickleAction, textChars: command.text?.length, caller: command.caller };
     case "setPickleArchived":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, archived: command.archived ? 1 : 0, caller: command.caller };
+    case "setPickleNotifications":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, notifyMain: command.notifyMainOnCompletion === undefined ? undefined : command.notifyMainOnCompletion ? 1 : 0, notifyMacOS: command.notifyMacOSOnCompletion === undefined ? undefined : command.notifyMacOSOnCompletion ? 1 : 0, caller: command.caller };
     case "cycleSessionThinkingLevel": case "listSessionRuntimeOptions": case "setSessionModel": case "setSessionThinkingLevel": case "setSessionFastMode": case "cycleSessionModel":
       return runtimeControlCommandLogFields(command);
     case "clearQueue":

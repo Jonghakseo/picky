@@ -63,6 +63,17 @@ interface CompactPickleListEnvelope {
   sessions: CompactPickleListSession[];
 }
 
+interface PickleNotifyOptions {
+  main?: string;
+  macos?: string;
+  json?: boolean;
+}
+
+interface PickleNotificationState {
+  main: boolean;
+  macos: boolean;
+}
+
 interface PickleCreateOptions extends SharedOptions {
   instructions?: string;
   empty?: boolean;
@@ -107,6 +118,7 @@ Examples:
   $ picky pickle-list --archived --query "sentry"
   $ picky pickle-archive pickle-abc
   $ picky pickle-unarchive pickle-abc
+  $ picky pickle-notify pickle-abc --macos on
   $ picky pickle-steer pickle-abc "production 환경으로 다시"
   $ picky pickle-abort pickle-abc
   $ picky pickle-group-list
@@ -413,6 +425,49 @@ Examples:
       }
       const event = await setPickleArchiveState(connection, sessionId, false);
       printArchiveStateResult(event, options.json, `Restored Pickle ${sessionId}`);
+    });
+  });
+
+program
+  .command("pickle-notify <session-id>")
+  .description("Show or change one Pickle's completion notifications. Without --main or --macos, prints the current settings.")
+  .option("--main <on|off>", "Report this Pickle's completion to Main Picky")
+  .option("--macos <on|off>", "Show a macOS notification when this Pickle completes")
+  .option("--json", "Emit { schemaVersion: 1, id, notifications: { main, macos }, changed } to stdout")
+  .addHelpText("after", `
+Both channels act only on successful completion and are independent of each
+other. New-Pickle defaults in Settings do not change existing Pickles, and this
+command does not change those defaults. An omitted channel keeps its value.
+
+Examples:
+  $ picky pickle-notify pickle-abc
+  $ picky pickle-notify pickle-abc --macos on
+  $ picky pickle-notify pickle-abc --main off --macos off --json
+`)
+  .action(async (sessionId: string, options: PickleNotifyOptions) => {
+    await runWithErrorHandling(async () => {
+      const requested = {
+        main: parsePickleNotifyChannel("--main", options.main),
+        macos: parsePickleNotifyChannel("--macos", options.macos),
+      };
+      if (sessionId === "picky") fail("Notification settings apply only to Pickles, not the main Picky agent", 64);
+      const connection = await loadCliConnection();
+      const session = await fetchSessionByID(connection, sessionId);
+      if (!session) fail(`Pickle session not found: ${sessionId}`, 1);
+      const current = pickleNotificationState(session);
+      const change = {
+        ...(requested.main !== undefined && requested.main !== current.main ? { notifyMainOnCompletion: requested.main } : {}),
+        ...(requested.macos !== undefined && requested.macos !== current.macos ? { notifyMacOSOnCompletion: requested.macos } : {}),
+      };
+      if (Object.keys(change).length === 0) {
+        printPickleNotifications(sessionId, current, false, options.json);
+        return;
+      }
+      const event = await sendCommand(connection, { type: "setPickleNotifications", sessionId, ...change, ...callerFields }, {
+        matchEvent: matchPickleSessionUpdated,
+        timeoutMs: 17_000,
+      });
+      printPickleNotifications(sessionId, pickleNotificationState(event.session), true, options.json);
     });
   });
 
@@ -905,6 +960,28 @@ function printArchiveNoop(sessionId: string, archived: boolean, asJson: boolean 
     return;
   }
   process.stdout.write(archived ? `Pickle already archived: ${sessionId}\n` : `Pickle already visible: ${sessionId}\n`);
+}
+
+function parsePickleNotifyChannel(flag: string, raw: string | undefined): boolean | undefined {
+  if (raw === undefined) return undefined;
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "on" || normalized === "true") return true;
+  if (normalized === "off" || normalized === "false") return false;
+  fail(`${flag} must be on or off`, 64);
+}
+
+/** Matches the HUD toggles: only an explicit true enables a channel. */
+function pickleNotificationState(session: PickyAgentSession): PickleNotificationState {
+  return { main: session.notifyMainOnCompletion === true, macos: session.notifyMacOSOnCompletion === true };
+}
+
+function printPickleNotifications(sessionId: string, state: PickleNotificationState, changed: boolean, asJson: boolean | undefined): void {
+  if (asJson) {
+    process.stdout.write(`${JSON.stringify({ schemaVersion: 1, id: sessionId, notifications: state, changed }, null, 2)}\n`);
+    return;
+  }
+  const prefix = changed ? "Updated" : "Pickle";
+  process.stdout.write(`${prefix} ${sessionId} notifications: main=${state.main ? "on" : "off"} macos=${state.macos ? "on" : "off"}\n`);
 }
 
 async function runWithErrorHandling(action: () => Promise<void>): Promise<void> {

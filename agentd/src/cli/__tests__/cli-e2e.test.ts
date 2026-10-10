@@ -146,6 +146,48 @@ describe("picky CLI against a real agentd server", () => {
     expect((await new SessionStore(appSupportDir).loadReadOnly(created.id))?.title).toBe("Persisted without reply");
   });
 
+  it("changes one Pickle's completion notifications through the owner and reads back the persisted state", async () => {
+    const created = await supervisor.createEmptyPickleSession(context("notify"));
+    const pending = new Map<string, { requestId: string; remaining: number }>();
+    await connectApp(["pickleBridge"], (event, socket) => {
+      if (event.type === "pickleBridgeRequested" && event.operation === "listSessions") {
+        sendAppCommand(socket, { type: "completePickleBridgeRequest", requestId: event.requestId, sessions: supervisor.list(), groups: [] });
+      }
+      if (event.type === "pickleBridgeRequested" && event.operation === "setNotifications") {
+        // Mirrors the app router: one owner command per requested channel.
+        const channels = [
+          ...(event.notifyMainOnCompletion === undefined ? [] : [{ type: "setNotifyMainOnCompletion", enabled: event.notifyMainOnCompletion }]),
+          ...(event.notifyMacOSOnCompletion === undefined ? [] : [{ type: "setNotifyMacOSOnCompletion", enabled: event.notifyMacOSOnCompletion }]),
+        ];
+        for (const [index, channel] of channels.entries()) {
+          const ownerId = `owner-${event.requestId}-${index}`;
+          pending.set(ownerId, { requestId: event.requestId, remaining: channels.length });
+          sendAppCommand(socket, { id: ownerId, sessionId: event.sessionId, ...channel });
+        }
+      }
+      if (event.type === "ack" && event.commandId && pending.has(event.commandId)) {
+        const { requestId } = pending.get(event.commandId)!;
+        pending.delete(event.commandId);
+        if ([...pending.values()].some((entry) => entry.requestId === requestId)) return;
+        sendAppCommand(socket, { type: "completePickleBridgeRequest", requestId, delivered: true, session: supervisor.get(created.id) });
+      }
+    });
+
+    const before = await runCli(["pickle-notify", created.id, "--json"]);
+    expect(before, before.stderr).toMatchObject({ code: 0 });
+    expect(JSON.parse(before.stdout)).toEqual({ schemaVersion: 1, id: created.id, notifications: { main: false, macos: false }, changed: false });
+
+    const changed = await runCli(["pickle-notify", created.id, "--main", "on", "--macos", "on"]);
+    expect(changed, changed.stderr).toMatchObject({ code: 0 });
+    expect(changed.stdout).toBe(`Updated ${created.id} notifications: main=on macos=on\n`);
+    const persisted = await new SessionStore(appSupportDir).loadReadOnly(created.id);
+    expect(persisted).toMatchObject({ notifyMainOnCompletion: true, notifyMacOSOnCompletion: true });
+
+    const partial = await runCli(["pickle-notify", created.id, "--macos", "off", "--json"]);
+    expect(JSON.parse(partial.stdout)).toMatchObject({ notifications: { main: true, macos: false }, changed: true });
+    expect(supervisor.get(created.id)).toMatchObject({ notifyMainOnCompletion: true, notifyMacOSOnCompletion: false, status: created.status });
+  });
+
   it.each(["pickle", "picky"])("resolves a live %s caller through the real owner and rejects its expired generation", async (kind) => {
     const created = kind === "pickle" ? await supervisor.createEmptyPickleSession(context("identity")) : undefined;
     const binding = createPickyCliCallerBinding(created?.id ?? "picky");

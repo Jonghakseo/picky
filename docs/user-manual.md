@@ -583,7 +583,7 @@ The composer bottom action row includes two independent controls for successful 
 - **Picky icon**: report completion to Main Picky.
 - **Bell**: show a macOS completion notification. `Cmd + N` toggles only this channel.
 
-Enable either channel, both, or neither for each Pickle. The conversation menu exposes the same two toggles. **Hub → Settings → Notifications, permissions, and privacy** supplies defaults only when a new Pickle is created; changing those defaults does not change existing Pickles.
+Enable either channel, both, or neither for each Pickle. The conversation menu exposes the same two toggles, and `picky pickle-notify` reads or changes them from the CLI. **Hub → Settings → Notifications, permissions, and privacy** supplies defaults only when a new Pickle is created; changing those defaults does not change existing Pickles.
 
 Both defaults are off on a fresh install, so background work stays quiet until you enable a channel. Whether macOS notifications remain in Notification Center follows **System Settings → Notifications → Picky**. Clicking a notification opens that Pickle in the HUD without opening Hub; reopening Picky from its Dock icon still brings Hub forward.
 
@@ -841,6 +841,8 @@ picky pickle-list --json
 picky pickle-list --archived --query sentry
 picky pickle-archive <session-id>
 picky pickle-unarchive <session-id>
+picky pickle-notify <session-id>                    # show completion notifications
+picky pickle-notify <session-id> --main off --macos on
 picky pickle-steer <session-id> "focus on production impact"
 picky pickle-abort <session-id>
 picky pickle-group-list
@@ -865,6 +867,8 @@ picky settings-set mainAgent.model "claude*sonnet"
 `picky pickle-list --json` is the safe automation format. It returns `{ type: "pickleList", schemaVersion: 1, sessions: [...] }`. Every session contains only `id`, `title`, `status`, `createdAt`, `updatedAt`, normalized `archived`, and compact `artifacts`; `cwd`, `archivedAt`, and `dockGroup` appear when available. Artifacts contain `id`, `kind`, `title`, optional `url`, and `updatedAt`. Dock groups contain `id`, `name`, `color`, and `collapsed`. Session messages, logs, tool previews, final answers, local paths, queue text, changed files, and artifact paths are deliberately excluded.
 
 Existing consumers of `.sessions[].id`, title, status, or artifact links should stay on `--json`. Legacy scripts that require session details omitted above must explicitly migrate to `picky pickle-list --raw-json`. That flag returns the former filtered session snapshot and may expose sensitive session details. It is not an authoritative message journal: the app bridge can return `messages: []` with `messageJournalAvailable: false`. Archive selection, query filtering, limit slicing, and dock-group enrichment are identical in both JSON modes. This change minimizes CLI stdout only; the local app/daemon bridge still supplies the session summary used for filtering.
+
+`picky pickle-notify <session-id>` prints one Pickle's two completion channels from section 8.9: `main` (report completion to Main Picky) and `macos` (macOS notification). Pass `--main on|off` and/or `--macos on|off` to change them; an omitted channel keeps its value, and a value that already matches is not sent again. The change goes through the Pickle's owning daemon, just like the composer and conversation-menu toggles, and appears in the HUD. It never changes the new-Pickle defaults in Settings. Any caller may use it, including archived Pickles; the main Picky agent itself has no notification settings. `--json` returns `{ schemaVersion: 1, id, notifications: { main, macos }, changed }`. Invalid values exit with code 64 and an unknown session with code 1.
 
 #### Caller identity and Pickle names
 

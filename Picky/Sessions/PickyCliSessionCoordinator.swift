@@ -169,6 +169,27 @@ final class PickyCliSessionCoordinator: PickyPickleTitleRenaming {
                 try await host.asyncOwnerControl.bridgeArchive(sessionID: sessionId, archived: archived, mode: request.archiveMode,
                     tracked: host.pickleSessionSummary(id: sessionId)?.hasAsyncTracking == true)
                 await complete(request, on: responseClient, session: host.pickleSessionSummary(id: sessionId), delivered: true)
+            case .setNotifications:
+                guard let sessionId = request.sessionId,
+                      request.notifyMainOnCompletion != nil || request.notifyMacOSOnCompletion != nil else {
+                    throw PickyAgentClientRouterError.invalidBridgeRequest
+                }
+                guard var session = host.pickleSessionSummary(id: sessionId) else {
+                    throw PickyCliSessionError.cliCallerNotProjected(sessionId: sessionId)
+                }
+                // Each send waits for the owning daemon to acknowledge the
+                // persisted value, exactly like the HUD toggles. The owner's
+                // meta patch updates the HUD; the reply reports what the owner
+                // confirmed even if that patch has not been applied yet.
+                if let enabled = request.notifyMainOnCompletion {
+                    try await host.send(PickyCommandEnvelope(type: .setNotifyMainOnCompletion, sessionId: sessionId, enabled: enabled))
+                    session.notifyMainOnCompletion = enabled
+                }
+                if let enabled = request.notifyMacOSOnCompletion {
+                    try await host.send(PickyCommandEnvelope(type: .setNotifyMacOSOnCompletion, sessionId: sessionId, enabled: enabled))
+                    session.notifyMacOSOnCompletion = enabled
+                }
+                await complete(request, on: responseClient, session: cliSessionSummary(session), delivered: true)
             case .delete:
                 guard let sessionId = request.sessionId,
                       let finalizeDeletion = host.pickleDeletionCleanupHandler else {

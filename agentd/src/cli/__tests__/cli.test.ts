@@ -539,6 +539,49 @@ describe("picky cli", () => {
     expect(server.received.find((command) => (command as { type?: string }).type === "setPickleArchived")).toMatchObject({ type: "setPickleArchived", caller: "mainAgent", sessionId: "p-1", archived: true });
   });
 
+  it("pickle-notify prints the current channels without changing them", async () => {
+    server.onCommand("listPickles", (command, send) => {
+      send({ type: "pickleSessionsSnapshot", commandId: (command as { id: string }).id, sessions: [sessionFixture({ id: "p-1", notifyMainOnCompletion: true })] });
+    });
+    const text = await runCli(["pickle-notify", "p-1"]);
+    expect(text.code).toBe(0);
+    expect(text.stdout).toBe("Pickle p-1 notifications: main=on macos=off\n");
+
+    const json = await runCli(["pickle-notify", "p-1", "--json"]);
+    expect(JSON.parse(json.stdout)).toEqual({ schemaVersion: 1, id: "p-1", notifications: { main: true, macos: false }, changed: false });
+    expect(server.received.some((command) => (command as { type?: string }).type === "setPickleNotifications")).toBe(false);
+  });
+
+  it("main-agent pickle-notify sends only the changed channels and reports the confirmed result", async () => {
+    server.onCommand("getPickle", (command, send) => {
+      send({ type: "pickleSessionUpdated", commandId: (command as { id: string }).id, session: sessionFixture({ id: "p-1", notifyMainOnCompletion: true }) });
+    });
+    server.onCommand("setPickleNotifications", (command, send) => {
+      const cmd = command as { id: string; sessionId: string; notifyMainOnCompletion?: boolean; notifyMacOSOnCompletion?: boolean };
+      send({ type: "pickleSessionUpdated", commandId: cmd.id, session: sessionFixture({ id: cmd.sessionId, notifyMainOnCompletion: cmd.notifyMainOnCompletion ?? true, notifyMacOSOnCompletion: cmd.notifyMacOSOnCompletion ?? false }) });
+    });
+    const result = await runCli(["pickle-notify", "p-1", "--main", "on", "--macos", "ON", "--json", "--from-main"]);
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ schemaVersion: 1, id: "p-1", notifications: { main: true, macos: true }, changed: true });
+    const sent = server.received.filter((command) => (command as { type?: string }).type === "setPickleNotifications");
+    expect(sent).toEqual([expect.objectContaining({ caller: "mainAgent", sessionId: "p-1", notifyMacOSOnCompletion: true })]);
+    expect(sent[0]).not.toHaveProperty("notifyMainOnCompletion");
+  });
+
+  it("pickle-notify rejects invalid values, the main agent, and unknown Pickles", async () => {
+    const invalid = await runCli(["pickle-notify", "p-1", "--macos", "maybe"]);
+    expect(invalid.code).toBe(64);
+    expect(invalid.stderr).toContain("--macos must be on or off");
+
+    const main = await runCli(["pickle-notify", "picky", "--main", "on"]);
+    expect(main.code).toBe(64);
+
+    const missing = await runCli(["pickle-notify", "p-missing", "--main", "off"]);
+    expect(missing.code).toBe(1);
+    expect(missing.stderr).toContain("Pickle session not found: p-missing");
+    expect(server.received.some((command) => (command as { type?: string }).type === "setPickleNotifications")).toBe(false);
+  });
+
   it("pickle-archive is a safe no-op for an already archived session", async () => {
     server.onCommand("listPickles", (command, send) => {
       void command;

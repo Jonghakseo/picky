@@ -1968,6 +1968,40 @@ struct PickyAgentClientRouterTests {
         }
     }
 
+    @Test func pickleBridgeNotificationChangeWritesThroughTheOwningChild() async throws {
+        let sessionID = "notify-child"
+        let setup = try await setUpRouterWithChildren(sessionIds: [sessionID])
+        defer { setup.router.disconnect(); setup.pool.terminateAllChildren() }
+        let child = try #require(setup.children.first)
+        setup.router.pickleSessionSummariesProvider = {
+            [PickyAgentSession(
+                id: sessionID, title: "Notify", status: .running, cwd: "/tmp/notify",
+                createdAt: Date(), updatedAt: Date(), logs: [], tools: [], artifacts: [], changedFiles: [],
+                notifyMainOnCompletion: true, notifyMacOSOnCompletion: false
+            )]
+        }
+        child.onSendInject = { command in
+            if command.type == .setNotifyMacOSOnCompletion || command.type == .setNotifyMainOnCompletion {
+                child.emit(.protocolEvent(makeAckEnvelope(commandId: command.id)))
+            }
+        }
+
+        setup.primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(
+            operation: "setNotifications",
+            sessionId: sessionID,
+            notifyMacOSOnCompletion: true
+        )))
+
+        try await waitUntil { setup.primary.sentCommands.contains { $0.type == .completePickleBridgeRequest } }
+        let reply = try #require(setup.primary.sentCommands.last { $0.type == .completePickleBridgeRequest })
+        #expect(reply.errorMessage == nil)
+        #expect(reply.session?.notifyMacOSOnCompletion == true)
+        #expect(reply.session?.notifyMainOnCompletion == true)
+        #expect(child.sentCommands.contains { $0.type == .setNotifyMacOSOnCompletion && $0.sessionId == sessionID && $0.enabled == true })
+        #expect(!child.sentCommands.contains { $0.type == .setNotifyMainOnCompletion })
+        #expect(!setup.primary.sentCommands.contains { $0.type == .setNotifyMacOSOnCompletion })
+    }
+
     @Test func explicitArchivedDeletionUsesExistingOwnerWithoutRespawningRetiredRuntime() async throws {
         let sessionID = "archived-delete"
         let setup = try await setUpRouterWithChildren(sessionIds: [sessionID])

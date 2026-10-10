@@ -52,6 +52,8 @@ The `picky` CLI is Picky.app's local programmatic interface. It can submit text 
 
 - `picky pickle-archive <session-id>` hides a Pickle from the dock; `picky pickle-unarchive <session-id>` restores it within the retention window.
 
+- `picky pickle-notify <session-id>` shows a Pickle's completion notifications (`main` = report to Main Picky, `macos` = macOS notification). Change them only when asked, with `--main on|off` and/or `--macos on|off`; omitted channels stay unchanged. Add `--json` for `{ schemaVersion: 1, id, notifications: { main, macos }, changed }`. New-Pickle defaults in Settings are not affected.
+
 - `picky pickle-group-list` lists dock groups. Prefer `--json` for programmatic use. Main-agent calls hide archived member IDs by default; pass `--include-archived` only when archived Pickles are relevant.
 
 - `picky pickle-followup <session-id> <text>` sends a follow-up to an existing Pickle.

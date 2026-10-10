@@ -324,6 +324,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case getPickle
     case controlPickle
     case setPickleArchived
+    case setPickleNotifications
     case deletePickle
     case manageDockGroups
     case controlPushToTalkFromExternal
